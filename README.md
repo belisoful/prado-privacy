@@ -341,9 +341,19 @@ the provider finds the consent module by its surface (`getConsent()`, `setConsen
 
 **Advanced consent mode is the documented default.** The Google tag loads with the undecided
 types denied and sends cookieless pings (IP address, user agent, page) until the visitor decides.
-Some EU regulators read those pings as processing that needs consent. **Basic consent mode** loads
-no tag until consent. For it, keep `GAnalyticsModule` `Enabled="false"` for visitors who have not
-granted `analytics`, for example with a behavior that reads `TConsentModule::isGranted('analytics')`.
+Some EU regulators read those pings as processing that needs consent.
+
+**Basic consent mode** loads no tag and makes no Google request until the visitor grants
+`analytics` or `marketing`. Set `ConsentMode="basic"` on the ganalytics module:
+
+```xml
+<module id="belisoful/ganalytics" MeasurementId="G-XXXXXXXXXX" ConsentProvider="privacy-analytics" ConsentMode="basic" />
+```
+
+- **Postback:** a grant from the banner or the preferences renders the page with the tag.
+- **Callback:** a grant loads the tag into the open page through a small loader function, with no
+  `eval`, so a nonce CSP is enough.
+- **Before consent:** events queued before the visitor consents are dropped.
 
 **Why the adapter lives in ganalytics.** The consent framework is vendor-neutral and meant for
 `pradosoft/prado`, which cannot ship a Google binding. The binding also depends on the framework,

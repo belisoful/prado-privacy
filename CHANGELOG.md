@@ -47,4 +47,5 @@ The first release, 0.1.0.
   their activities.
 - `prado-cli privacy/purge` and `privacy/ropa`.
 - The Google Consent Mode mapping (README), for `GAnalyticsPrivacyConsentProvider` of
-  `belisoful/ganalytics`.
+  `belisoful/ganalytics`, with advanced mode as the default and basic mode by
+  `ConsentMode="basic"` on the ganalytics module.
