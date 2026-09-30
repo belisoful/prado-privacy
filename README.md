@@ -355,10 +355,37 @@ Some EU regulators read those pings as processing that needs consent.
   `eval`, so a nonce CSP is enough.
 - **Before consent:** events queued before the visitor consents are dropped.
 
-**Why the adapter lives in ganalytics.** The consent framework is vendor-neutral and meant for
-`pradosoft/prado`, which cannot ship a Google binding. The binding also depends on the framework,
-not the other way round. `belisoful/prado-privacy` is a `suggest` of ganalytics, and nothing here
-refers to ganalytics.
+### Erasure and records of processing
+
+ganalytics' `GAnalyticsPersonalDataProvider` is an `IPersonalDataProvider` and an
+`IProcessingActivityProvider`. `TPrivacyModule` and `TProcessingRegistry` discover it as a loaded
+module:
+
+```xml
+<module id="privacy-google" class="belisoful\GAnalytics\GAnalyticsPersonalDataProvider" />
+```
+
+| Request | Effect |
+|---|---|
+| `erase()` | One GA4 user deletion (Admin API `submitUserDeletion`) per identifier of the subject; Google deletes the events collected before the request |
+| `export()` | The property and the identifiers Google Analytics holds the subject's events under |
+| `rectify()` | Nothing: Google Analytics data can only be deleted |
+
+The identifiers are the `user_id` ganalytics derives from the user name (with `UserIdFromUser`),
+the `TDataSubject` identifiers `ga_user_id`, `ga_client_id` and `ga_app_instance_id`, the
+requester's `_ga` cookie, and, with `EraseUserProvidedData`, the subject's email. A user's client
+ids from other devices are found only when the application records them and passes them as
+`ga_client_id`. The ganalytics credentials need the `analytics.edit` scope and the Editor role on
+the property.
+
+The registry gains a "Google Analytics" activity: consent as the legal basis, Google as the
+recipient, the transfer to the United States, and the property's data retention setting. The
+provider's `Activity` property overrides any field.
+
+**Why the adapters live in ganalytics.** The framework is vendor-neutral and meant for
+`pradosoft/prado`, which cannot ship a Google binding. The bindings also depend on the framework,
+not the other way round. `belisoful/prado-privacy` is a `suggest` and a development dependency of
+ganalytics, and nothing here refers to ganalytics.
 
 ## Development
 

@@ -49,3 +49,5 @@ The first release, 0.1.0.
 - The Google Consent Mode mapping (README), for `GAnalyticsPrivacyConsentProvider` of
   `belisoful/ganalytics`, with advanced mode as the default and basic mode by
   `ConsentMode="basic"` on the ganalytics module.
+- README: erasure, export and the records of processing for Google Analytics through
+  `GAnalyticsPersonalDataProvider` of `belisoful/ganalytics`.
