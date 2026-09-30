@@ -44,3 +44,5 @@ All notable changes to `belisoful/prado-privacy` are recorded here. The format f
   JSON and Markdown output). `TConsentModule`, `TPrivacyModule` and `TIpRegionResolver` declare
   their activities.
 - `prado-cli privacy/purge` and `privacy/ropa`.
+- The Google Consent Mode mapping (README), for `GAnalyticsPrivacyConsentProvider` of
+  `belisoful/ganalytics`.

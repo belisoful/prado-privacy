@@ -8,8 +8,9 @@ subject rights (export, erasure, rectification), retention, and records of proce
 The class names carry no vendor prefix (`TConsentModule`, not `PrivacyConsentModule`), so parts
 of the package can be proposed to `pradosoft/prado`.
 
-> **Status: in development.** Consent management, data subject rights, retention and records of
-> processing are complete; the Google Analytics binding follows. The design is recorded in
+> **Status: in development, feature-complete for the first release.** Consent management, data
+> subject rights, retention, records of processing, and the Google Analytics binding (in
+> belisoful/ganalytics). The design is recorded in
 > [agents/working/DESIGN_2026-09-29.md](agents/working/DESIGN_2026-09-29.md).
 
 This package supplies the mechanism. The site owner remains responsible for the policy text, the
@@ -309,6 +310,45 @@ the period the purge enforces. `toArray()`, `toJson()` and `toMarkdown()` give t
 | `Transfers` | (e) |
 | `RetentionPolicy`, `RetentionPeriod` | (f) |
 | `SecurityMeasures` | (g) |
+
+## Google Analytics (belisoful/ganalytics)
+
+[belisoful/ganalytics](https://github.com/belisoful/GAnalytics) binds `TConsentModule` to Google
+Consent Mode through its `GAnalyticsPrivacyConsentProvider`. Neither package requires the other:
+the provider finds the consent module by its surface (`getConsent()`, `setConsent()`,
+`onConsentChanged`).
+
+```xml
+<module id="belisoful/prado-privacy" Version="2026-09" />
+<module id="privacy-analytics" class="belisoful\GAnalytics\GAnalyticsPrivacyConsentProvider" />
+<module id="belisoful/ganalytics" MeasurementId="G-XXXXXXXXXX" ConsentProvider="privacy-analytics"
+	ConsentDefaults='{"analytics_storage": "denied", "ad_storage": "denied", "ad_user_data": "denied", "ad_personalization": "denied"}' />
+```
+
+| Consent category | Google consent types |
+|---|---|
+| `analytics` | `analytics_storage` |
+| `marketing` | `ad_storage`, `ad_user_data`, `ad_personalization` |
+| `functional` | `functionality_storage` |
+| `personalization` | `personalization_storage` |
+| (always) | `security_storage` = `granted` |
+
+- Each page's `gtag('consent', 'default', …)` carries the visitor's decided categories. An
+  undecided category keeps `ConsentDefaults`.
+- Every change from the banner, the preferences or a withdrawal sends `gtag('consent', 'update',
+  …)` on the page or callback that made it.
+- GPC applies before the mapping, so a GPC opt-out denies the three ad types.
+
+**Advanced consent mode is the documented default.** The Google tag loads with the undecided
+types denied and sends cookieless pings (IP address, user agent, page) until the visitor decides.
+Some EU regulators read those pings as processing that needs consent. **Basic consent mode** loads
+no tag until consent. For it, keep `GAnalyticsModule` `Enabled="false"` for visitors who have not
+granted `analytics`, for example with a behavior that reads `TConsentModule::isGranted('analytics')`.
+
+**Why the adapter lives in ganalytics.** The consent framework is vendor-neutral and meant for
+`pradosoft/prado`, which cannot ship a Google binding. The binding also depends on the framework,
+not the other way round. `belisoful/prado-privacy` is a `suggest` of ganalytics, and nothing here
+refers to ganalytics.
 
 ## Development
 
