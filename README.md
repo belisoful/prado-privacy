@@ -8,8 +8,8 @@ subject rights (export, erasure, rectification), retention, and records of proce
 The class names carry no vendor prefix (`TConsentModule`, not `PrivacyConsentModule`), so parts
 of the package can be proposed to `pradosoft/prado`.
 
-> **Status: in development.** Consent management is complete; data subject rights, retention and
-> records of processing, and the Google Analytics binding follow. The design is recorded in
+> **Status: in development.** Consent management and data subject rights are complete; retention
+> and records of processing, and the Google Analytics binding follow. The design is recorded in
 > [agents/working/DESIGN_2026-09-29.md](agents/working/DESIGN_2026-09-29.md).
 
 This package supplies the mechanism. The site owner remains responsible for the policy text, the
@@ -188,6 +188,57 @@ the visitor's cookie), time, policy version, the full decision, the source (`ban
 the IP address, the user name and (with `LogUserAgent`) the user agent. Nothing identifies a
 person in clear. Tables are created on first use (`AutoCreateTables`); `config/schema/` holds the
 DDL for sqlite, MySQL and PostgreSQL.
+
+## Data subject rights
+
+`TPrivacyModule` answers access, portability, erasure and rectification requests (GDPR Art. 15–17
+and 20; CCPA/CPRA §1798.100–.106) across every module that holds personal data, and records each
+request and its outcome.
+
+```xml
+<module id="rights" class="belisoful\Privacy\Rights\TPrivacyModule" ResponseDays="30">
+	<provider class="belisoful\Privacy\Rights\TUserPersonalDataProvider" />
+	<provider class="belisoful\Privacy\Rights\TSessionPersonalDataProvider" />
+	<provider class="belisoful\Privacy\Rights\TConsentPersonalDataProvider" />
+</module>
+```
+
+```php
+// The application verifies the requester first; the module does not.
+$subject = new TDataSubject('alice', 'alice@example.com');
+$json = $rights->exportJson($subject, 'self');          // Art. 15 and 20
+$results = $rights->erase($subject, 'operator:dpo');    // Art. 17: TErasureResult per provider
+$rights->rectify($subject, ['user' => ['email' => 'new@example.com']]);   // Art. 16
+$rights->openRequest('erase', $subject, 'letter');      // a request received by post counts toward the deadline
+$late = $rights->getOverdueRequests();
+```
+
+A module joins by implementing `IPersonalDataProvider`: `getPersonalDataName()`,
+`exportPersonalData()`, `erasePersonalData()` (returning a `TErasureResult`: counts erased, counts
+retained with the legal reason, errors) and `rectifyPersonalData()`. Loaded modules that implement
+it are discovered (`AutoDiscover`); others are listed with `<provider>`. A provider that throws
+does not stop the rest: the request is recorded as `partial` (or `failed`), and the exception
+message goes to the application log, not to the request record.
+
+| Built-in provider | Export | Erase |
+|---|---|---|
+| `TUserPersonalDataProvider` | the user's name, roles and `TUser` state from the user manager; `onExportUser` adds fields | raises `onEraseUser` for the application to delete the user (PRADO has no user-deletion API); without a handler, or for a `TUserManager` user defined in configuration, the user is reported as retained |
+| `TSessionPersonalDataProvider` | the current session, when the subject is the logged-in requester | destroys it; other visitors' sessions are unreachable and reported as such |
+| `TConsentPersonalDataProvider` | the current choice, `TDbConsentStore` rows, and the subject's consent log entries | withdraws the choice and deletes the rows; the log entries are retained as proof of consent (Art. 7(1), 17(3)(b)) until retention removes them |
+
+Every request goes to `privacy_request` (`TDbPrivacyRequestLog`, the runtime sqlite database
+unless `<requestlog ConnectionID="…"/>`): type, the subject's hash, who asked, when, the due date
+(`ResponseDays`, 30 by default; the GDPR allows one month, the CCPA 45 days), status and the
+outcome per provider, without personal data. `onPrivacyRequest` and `onPrivacyRequestComplete`
+bracket each request.
+
+From the command line, in a `TShellApplication`:
+
+```sh
+prado-cli privacy/export alice --by=dpo
+prado-cli privacy/erase alice --by=dpo
+prado-cli privacy/requests overdue
+```
 
 ## Development
 

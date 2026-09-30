@@ -52,12 +52,13 @@ class FakeUser extends TComponent implements IUser
 
 	public function saveToString()
 	{
-		return \serialize([$this->name, $this->guest, $this->roles]);
+		// JSON, not serialize(): an IUser's saved form need not be TUser's serialized state.
+		return \json_encode([$this->name, $this->guest, $this->roles]);
 	}
 
 	public function loadFromString($string)
 	{
-		[$this->name, $this->guest, $this->roles] = \unserialize($string);
+		[$this->name, $this->guest, $this->roles] = \json_decode($string, true);
 		return $this;
 	}
 }

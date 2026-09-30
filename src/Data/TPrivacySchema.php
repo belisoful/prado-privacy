@@ -24,6 +24,7 @@ use Prado\Exceptions\TConfigurationException;
  * |---|---|
  * | `privacy_consent_log` | `TDbConsentLog` |
  * | `privacy_consent_state` | `TDbConsentStore` |
+ * | `privacy_request` | `TDbPrivacyRequestLog` |
  *
  * Times are integer Unix seconds. Identifiers of people are HMAC-SHA256 hex digests.
  *
@@ -36,6 +37,9 @@ class TPrivacySchema
 
 	/** The consent state table. */
 	public const CONSENT_STATE = 'privacy_consent_state';
+
+	/** The data subject request table. */
+	public const REQUEST = 'privacy_request';
 
 	/** The drivers the schema supports. */
 	public const DRIVERS = ['sqlite', 'mysql', 'pgsql'];
@@ -55,7 +59,7 @@ class TPrivacySchema
 	 */
 	public static function getTables(): array
 	{
-		return [self::CONSENT_LOG, self::CONSENT_STATE];
+		return [self::CONSENT_LOG, self::CONSENT_STATE, self::REQUEST];
 	}
 
 	/**
@@ -103,6 +107,21 @@ class TPrivacySchema
 					. ($driver === 'mysql' ? ', INDEX idx_privacy_consent_state_subject (subject_hash), INDEX idx_privacy_consent_state_expires (expires_at)' : '')
 					. ')' . $suffix;
 				$indexes = ['subject_hash' => 'subject', 'expires_at' => 'expires'];
+				break;
+			case self::REQUEST:
+				$create = 'CREATE TABLE IF NOT EXISTS ' . $table . ' ('
+					. 'id ' . $pk . ', '
+					. 'type VARCHAR(16) NOT NULL, '
+					. 'subject_hash CHAR(64) NOT NULL, '
+					. 'requested_by VARCHAR(255) NULL, '
+					. 'requested_at ' . $int . ' NOT NULL, '
+					. 'due_at ' . $int . ' NOT NULL, '
+					. 'completed_at ' . $int . ' NULL, '
+					. 'status VARCHAR(16) NOT NULL, '
+					. 'outcome TEXT NULL'
+					. ($driver === 'mysql' ? ', INDEX idx_privacy_request_subject (subject_hash), INDEX idx_privacy_request_status (status), INDEX idx_privacy_request_requested (requested_at)' : '')
+					. ')' . $suffix;
+				$indexes = ['subject_hash' => 'subject', 'status' => 'status', 'requested_at' => 'requested'];
 				break;
 			default:
 				throw new TConfigurationException('privacy_db_table_unknown', $table);

@@ -30,6 +30,9 @@ and a records-of-processing registry. Class names are vendor-neutral so parts ca
 - Unit tests are namespaced `belisoful\Privacy\Test\Unit` mirroring `tests/unit/`; the phpunit
   bootstrap constructs a `TApplication` on `tests/unit/app`. No unit test reaches the network, a
   PHP session or randomness; time comes from `TMockClock`, databases are sqlite `:memory:`.
+- Data subject rights: `TPrivacyModule` runs `IPersonalDataProvider`s and records requests in
+  `privacy_request`; the built-in providers cover users (through events), the session and the
+  consent data. `prado-cli privacy/*` comes from `TPrivacyShellAction`.
 - belisoful/ganalytics is not a dependency. Its adapter (`GAnalyticsPrivacyConsentProvider`)
   lives in ganalytics; this README documents the category → Google consent type mapping.
 

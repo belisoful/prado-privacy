@@ -86,4 +86,20 @@ class TDbConsentStoreTest extends PrivacyTestCase
 		$store->clear();
 		$this->assertCount(2, $this->response->removed, 'clearing without a choice only expires the cookie');
 	}
+
+	public function testFindAndDeleteBySubject()
+	{
+		$this->login('alice');
+		$store = $this->store();
+		$store->save($this->record(\str_repeat('1', 32), 'denied', self::NOW - 50));
+		$store->save($this->record(\str_repeat('2', 32), 'granted', self::NOW));
+		$this->login('bob');
+		$store->save($this->record(\str_repeat('3', 32)));
+		$alice = \belisoful\Privacy\TPrivacyHash::hash('alice', \belisoful\Privacy\TPrivacyHash::SUBJECT);
+		$this->assertSame([\str_repeat('2', 32), \str_repeat('1', 32)], \array_map(fn ($r) => $r->getId(), $store->findBySubject($alice)));
+		TestDb::connection()->createCommand("UPDATE privacy_consent_state SET categories = 'not json' WHERE consent_id = '" . \str_repeat('1', 32) . "'")->execute();
+		$this->assertCount(1, $store->findBySubject($alice), 'a row that does not parse is skipped');
+		$this->assertSame(2, $store->deleteBySubject($alice));
+		$this->assertSame(1, TestDb::count('privacy_consent_state'));
+	}
 }

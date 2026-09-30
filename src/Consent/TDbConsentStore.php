@@ -85,6 +85,32 @@ class TDbConsentStore extends TCookieConsentStore
 	}
 
 	/**
+	 * @param string $subjectHash the hash of a user name
+	 * @return TConsentRecord[] the choices stored for the subject, newest first
+	 */
+	public function findBySubject(string $subjectHash): array
+	{
+		$criteria = new TActiveRecordCriteria('subject_hash = :subject', [':subject' => $subjectHash]);
+		$criteria->setOrdersBy(['updated_at' => 'desc']);
+		$records = [];
+		foreach (TConsentStateRecord::on($this->getTableConnection(TPrivacySchema::CONSENT_STATE))->findAll($criteria) as $row) {
+			$records[] = $this->toRecord($row);
+		}
+		return \array_values(\array_filter($records));
+	}
+
+	/**
+	 * Deletes the choices stored for a subject.
+	 * @param string $subjectHash the hash of a user name
+	 * @return int the number of choices deleted
+	 */
+	public function deleteBySubject(string $subjectHash): int
+	{
+		return (int) TConsentStateRecord::on($this->getTableConnection(TPrivacySchema::CONSENT_STATE))
+			->deleteAll('subject_hash = :subject', [':subject' => $subjectHash]);
+	}
+
+	/**
 	 * Finds the row of the cookie's consent id; without a cookie, the logged-in user's latest row when `RestoreForUser` is on.
 	 * @return ?TConsentRecord the stored choice
 	 */
@@ -102,7 +128,16 @@ class TDbConsentStore extends TCookieConsentStore
 		} else {
 			return null;
 		}
-		return !($row instanceof TConsentStateRecord) ? null : TConsentRecord::fromArray([
+		return $row instanceof TConsentStateRecord ? $this->toRecord($row) : null;
+	}
+
+	/**
+	 * @param TConsentStateRecord $row a row
+	 * @return ?TConsentRecord the choice the row holds; null when the row does not parse
+	 */
+	protected function toRecord(TConsentStateRecord $row): ?TConsentRecord
+	{
+		return TConsentRecord::fromArray([
 			'id' => (string) $row->consent_id,
 			'v' => (string) $row->version,
 			't' => (int) $row->updated_at,

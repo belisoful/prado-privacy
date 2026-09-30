@@ -28,3 +28,10 @@ All notable changes to `belisoful/prado-privacy` are recorded here. The format f
 - Global Privacy Control (`Sec-GPC`), honored by region (`HonorGpc`, `GpcCategories`).
 - Controls: `TConsentBanner`, `TConsentPreferences`, `TConsentLink` and `TConsentGate`, working by
   callback and by postback, with a packaged stylesheet.
+- Data subject rights: `IPersonalDataProvider`, `TDataSubject`, `TErasureResult`, and
+  `TPrivacyModule` (provider discovery, `export()`/`exportJson()`, `erase()`, `rectify()`,
+  `openRequest()`, `getOverdueRequests()`, `onPrivacyRequest`, `onPrivacyRequestComplete`).
+- The request log: `IPrivacyRequestLog` and `TDbPrivacyRequestLog` (`privacy_request`).
+- Built-in providers: `TUserPersonalDataProvider` (with `onExportUser`, `onEraseUser`,
+  `onRectifyUser`), `TSessionPersonalDataProvider` and `TConsentPersonalDataProvider`.
+- `prado-cli privacy/export`, `privacy/erase` and `privacy/requests` (`TPrivacyShellAction`).
