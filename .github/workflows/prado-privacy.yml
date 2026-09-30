@@ -1,0 +1,228 @@
+name: PRADO Privacy Extension
+on:
+  push:
+  pull_request:
+  schedule:
+    # The package tracks PRADO's master branch, so a change there can break a build that no
+    # commit here triggered. Once a week catches that.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+env:
+  # The PHP version of the coverage, Playwright and install jobs
+  PHP_VERSION: '8.4'
+  PHP_EXTENSIONS: ctype, dom, intl, json, mbstring, openssl, pcre, pdo, pdo_sqlite, sqlite3, spl, zlib
+
+jobs:
+  extension:
+    name: Privacy (PHP ${{ matrix.php-versions }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php-versions: ['8.1', '8.2', '8.3', '8.4', '8.5']
+
+    defaults:
+      run:
+        working-directory: prado-privacy
+
+    steps:
+      - name: Checkout extension
+        uses: actions/checkout@v5
+        with:
+          path: prado-privacy
+
+      - name: Checkout PRADO framework (4.4 dev)
+        uses: actions/checkout@v5
+        with:
+          repository: pradosoft/prado
+          ref: master
+          path: prado
+
+      - name: Setup PHP, with composer and extensions
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-versions }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          tools: cs2pr
+          coverage: none
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          # composer.lock is not committed, so the key hashes composer.json instead.
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php${{ matrix.php-versions }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-php${{ matrix.php-versions }}-composer-
+
+      - name: Register the sibling PRADO 4.4 checkout as a Composer path repository
+        run: composer config repositories.prado '{"type":"path","url":"../prado","options":{"symlink":true,"versions":{"pradosoft/prado":"4.4.0"}}}'
+
+      - name: Install Composer dependencies
+        run: composer install --no-progress --prefer-dist --optimize-autoloader
+
+      - name: Compile check (composer lint)
+        run: composer lint
+
+      - name: Validate code style using php-cs-fixer (src)
+        run: vendor/bin/php-cs-fixer check src -vvv --using-cache=no --format=checkstyle | cs2pr
+
+      - name: Validate code style using php-cs-fixer (tests)
+        run: vendor/bin/php-cs-fixer check tests -vvv --using-cache=no --format=checkstyle | cs2pr
+
+      - name: Validate code using phpstan (composer stan)
+        run: vendor/bin/phpstan analyse --memory-limit=1G --error-format=checkstyle | cs2pr
+
+      - name: Run Unit Tests (composer unittest)
+        run: composer unittest
+
+  coverage:
+    # The target is every line and every branch of src/. The branch list comes from Xdebug path
+    # coverage; coverage-branches.php exits 1 while any branch is unexecuted.
+    name: Privacy Coverage
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: prado-privacy
+
+    steps:
+      - name: Checkout extension
+        uses: actions/checkout@v5
+        with:
+          path: prado-privacy
+
+      - name: Checkout PRADO framework (4.4 dev)
+        uses: actions/checkout@v5
+        with:
+          repository: pradosoft/prado
+          ref: master
+          path: prado
+
+      - name: Setup PHP with Xdebug
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: xdebug
+
+      - name: Register the sibling PRADO 4.4 checkout as a Composer path repository
+        run: composer config repositories.prado '{"type":"path","url":"../prado","options":{"symlink":true,"versions":{"pradosoft/prado":"4.4.0"}}}'
+
+      - name: Install Composer dependencies
+        run: composer install --no-progress --prefer-dist --optimize-autoloader
+
+      - name: Measure unit test coverage (lines, branches and paths)
+        run: XDEBUG_MODE=coverage vendor/bin/phpunit --testsuite unit --path-coverage --coverage-text --coverage-php build/coverage/paths.php --coverage-html build/coverage/html
+
+      - name: Fail on any unexecuted branch
+        run: php tests/test_tools/coverage-branches.php build/coverage/paths.php
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: prado-privacy/build/coverage/
+          retention-days: 30
+
+  playwright:
+    name: Privacy Playwright (${{ matrix.browser_name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - browser: chromium
+            browser_name: Chromium
+          - browser: firefox
+            browser_name: Firefox
+          - browser: webkit
+            browser_name: WebKit
+
+    defaults:
+      run:
+        working-directory: prado-privacy
+
+    steps:
+      - name: Checkout extension
+        uses: actions/checkout@v5
+        with:
+          path: prado-privacy
+
+      - name: Checkout PRADO framework (4.4 dev)
+        uses: actions/checkout@v5
+        with:
+          repository: pradosoft/prado
+          ref: master
+          path: prado
+
+      - name: Setup PHP, with composer and extensions
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: prado-privacy/.nvmrc
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Install Playwright browser (${{ matrix.browser_name }})
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Register the sibling PRADO 4.4 checkout as a Composer path repository
+        run: composer config repositories.prado '{"type":"path","url":"../prado","options":{"symlink":true,"versions":{"pradosoft/prado":"4.4.0"}}}'
+
+      - name: Install Composer dependencies
+        run: composer install --no-progress --prefer-dist --optimize-autoloader
+
+      - name: Run Playwright end-to-end tests (${{ matrix.browser_name }})
+        run: npx playwright test --project=${{ matrix.browser }}
+
+      - name: Upload Playwright report (${{ matrix.browser_name }})
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-${{ matrix.browser }}
+          path: prado-privacy/build/playwright-report/
+          retention-days: 30
+
+  integration:
+    name: Composer extension install
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout extension
+        uses: actions/checkout@v5
+        with:
+          path: prado-privacy
+
+      - name: Checkout PRADO framework (4.4 dev)
+        uses: actions/checkout@v5
+        with:
+          repository: pradosoft/prado
+          ref: master
+          path: prado.master
+
+      - name: Setup PHP, with composer and extensions
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+
+      # Builds a throwaway consumer project that requires the extension through Composer, then
+      # asserts that extra.prado's error-messages, class-map, and bootstrap all take effect.
+      - name: Verify the Composer extension wiring
+        run: bash prado-privacy/tests/integration/run-install-test.sh

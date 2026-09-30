@@ -1,0 +1,124 @@
+{
+	"name": "belisoful/prado-privacy",
+	"type": "prado4-extension",
+	"description": "Privacy compliance for PRADO: consent management, data subject rights, retention and records of processing (GDPR, UK GDPR/PECR, ePrivacy, CCPA/CPRA).",
+	"keywords": [
+		"prado",
+		"privacy",
+		"gdpr",
+		"ccpa",
+		"cpra",
+		"eprivacy",
+		"pecr",
+		"consent",
+		"cookie-consent",
+		"gpc",
+		"dsar",
+		"retention",
+		"extension"
+	],
+	"homepage": "https://github.com/belisoful/prado-privacy",
+	"license": "BSD-3-Clause",
+	"authors": [
+		{
+			"name": "Brad Anderson",
+			"email": "belisoful@icloud.com",
+			"role": "Developer",
+			"homepage": "https://github.com/belisoful"
+		}
+	],
+	"autoload": {
+		"psr-4": {
+			"belisoful\\Privacy\\": "src"
+		}
+	},
+	"autoload-dev": {
+		"psr-4": {
+			"belisoful\\Privacy\\Test\\Unit\\": "tests/unit/"
+		}
+	},
+	"repositories": [
+		{
+			"type": "composer",
+			"url": "https://asset-packagist.org"
+		}
+	],
+	"minimum-stability": "dev",
+	"prefer-stable": true,
+	"require": {
+		"php": ">=8.1.0",
+		"pradosoft/prado": "^4.4@dev"
+	},
+	"suggest": {
+		"ext-pdo_sqlite": "The consent log, the database consent store, the privacy request log and retention purges without a configured database connection.",
+		"maxmind-db/reader": "Locating visitors from a local MaxMind DB file (GeoLite2, GeoIP2, DB-IP Lite, IPinfo, IP2Location) with TMaxMindDbLocator.",
+		"belisoful/ganalytics": "Google Analytics 4 with Consent Mode driven by TConsentModule (its GAnalyticsPrivacyConsentProvider)."
+	},
+	"require-dev": {
+		"phpunit/phpunit": "^10",
+		"friendsofphp/php-cs-fixer": "^3.95",
+		"phpstan/phpstan": "^2.1.22"
+	},
+	"config": {
+		"platform": {
+			"php": "8.1"
+		}
+	},
+	"scripts": {
+		"lint": "find src tests -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null",
+		"fix": [
+			"vendor/bin/php-cs-fixer fix src",
+			"vendor/bin/php-cs-fixer fix tests"
+		],
+		"cs": [
+			"vendor/bin/php-cs-fixer check src --using-cache=no --diff",
+			"vendor/bin/php-cs-fixer check tests --using-cache=no --diff"
+		],
+		"stan": "vendor/bin/phpstan analyse --memory-limit=1G",
+		"unittest": "vendor/bin/phpunit --testsuite unit",
+		"coverage": [
+			"@putenv XDEBUG_MODE=coverage",
+			"vendor/bin/phpunit --testsuite unit --coverage-text"
+		],
+		"coverage-html": [
+			"@putenv XDEBUG_MODE=coverage",
+			"vendor/bin/phpunit --testsuite unit --coverage-html build/coverage"
+		],
+		"coverage-paths": [
+			"@putenv XDEBUG_MODE=coverage",
+			"vendor/bin/phpunit --testsuite unit --path-coverage --coverage-text"
+		],
+		"coverage-branches": [
+			"@putenv XDEBUG_MODE=coverage",
+			"vendor/bin/phpunit --testsuite unit --path-coverage --coverage-php build/coverage/paths.php",
+			"php tests/test_tools/coverage-branches.php"
+		],
+		"integration": "tests/integration/run-install-test.sh",
+		"fulltest": [
+			"@lint",
+			"@cs",
+			"@stan",
+			"@unittest"
+		]
+	},
+	"scripts-descriptions": {
+		"lint": "Compile-check every PHP file under src/ and tests/ with php -l.",
+		"fix": "Apply php-cs-fixer to src/ and tests/.",
+		"cs": "Check code style without changing files (what CI runs).",
+		"stan": "Run PHPStan at the level in phpstan.neon.dist.",
+		"unittest": "Run the unit test suite.",
+		"coverage": "Run the unit tests with a text coverage report (Xdebug).",
+		"coverage-html": "Run the unit tests with an HTML coverage report in build/coverage.",
+		"coverage-paths": "Run the unit tests with Xdebug path coverage and a text summary.",
+		"coverage-branches": "List every unexecuted branch under src/; narrow with -- --filter <Test> --coverage-filter src/<Class>.php.",
+		"integration": "Install the package into a throwaway consumer project and verify the extra.prado wiring.",
+		"fulltest": "The full check: lint, code style, static analysis, unit tests, in that order."
+	},
+	"extra": {
+		"prado": {
+			"bootstrap": "belisoful\\Privacy\\Consent\\TConsentModule",
+			"error-messages": "config/errorMessages.txt",
+			"class-map": "config/classes.json"
+		}
+	}
+}
