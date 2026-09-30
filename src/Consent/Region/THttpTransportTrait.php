@@ -18,6 +18,7 @@ namespace belisoful\Privacy\Consent\Region;
  * {@see transport()} or point it at a server on the loopback.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 trait THttpTransportTrait
 {

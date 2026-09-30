@@ -25,6 +25,7 @@ use Prado\TEnumerable;
  * | `off` | nowhere |
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TGpcMode extends TEnumerable
 {

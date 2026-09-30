@@ -62,6 +62,7 @@ use Prado\Xml\TXmlElement;
  * acts for them, before building the `TDataSubject`.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TPrivacyModule extends TModule implements IProcessingActivityProvider
 {

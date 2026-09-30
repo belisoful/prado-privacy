@@ -24,6 +24,7 @@ use belisoful\Privacy\Retention\IRetentionPurger;
  * `IRetentionPurger`, a log removes the requests made before a cutoff.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 interface IPrivacyRequestLog extends IRetentionPurger
 {

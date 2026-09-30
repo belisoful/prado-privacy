@@ -31,6 +31,7 @@ use Prado\TPropertyValue;
  * removes the entries.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentPersonalDataProvider extends TModule implements IPersonalDataProvider
 {

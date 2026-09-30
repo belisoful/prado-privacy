@@ -32,6 +32,7 @@ use Prado\TPropertyValue;
  * ```
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentCategory extends TComponent
 {

@@ -49,6 +49,7 @@ use Prado\Web\UI\WebControls\TPanel;
  * @property-read \Prado\Web\UI\ActiveControls\TActiveButton $Close the close button
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentPreferences extends TTemplateControl implements IConsentControl
 {

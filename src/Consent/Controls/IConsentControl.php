@@ -19,6 +19,7 @@ namespace belisoful\Privacy\Consent\Controls;
  * reload.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 interface IConsentControl
 {

@@ -44,6 +44,7 @@ use Prado\Xml\TXmlElement;
  * give the record; `prado-cli privacy/ropa` prints it.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TProcessingRegistry extends TModule
 {

@@ -18,6 +18,7 @@ namespace belisoful\Privacy\Data;
  * `outcome` holds JSON: per provider, the counts erased and retained with reasons, and errors.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TPrivacyRequestRecord extends TPrivacyActiveRecord
 {

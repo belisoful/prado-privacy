@@ -17,6 +17,7 @@ namespace belisoful\Privacy\Data;
  * `TDbConsentStore`. `categories` holds JSON (category → `granted` or `denied`).
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentStateRecord extends TPrivacyActiveRecord
 {

@@ -24,6 +24,7 @@ use Prado\Prado;
  * Changing the validation key breaks the link between old and new digests.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TPrivacyHash
 {

@@ -21,6 +21,7 @@ use Prado\TComponent;
  * store it.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TErasureResult extends TComponent
 {

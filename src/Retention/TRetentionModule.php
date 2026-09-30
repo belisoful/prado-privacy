@@ -56,6 +56,7 @@ use Prado\Xml\TXmlElement;
  * `fxGetCronTaskInfos`.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TRetentionModule extends TModule
 {

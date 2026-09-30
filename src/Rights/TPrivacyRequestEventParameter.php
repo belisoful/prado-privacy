@@ -21,6 +21,7 @@ use Prado\TEventParameter;
  * `Outcome` per provider.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TPrivacyRequestEventParameter extends TEventParameter
 {

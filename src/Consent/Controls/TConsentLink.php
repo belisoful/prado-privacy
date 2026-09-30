@@ -38,6 +38,7 @@ use Prado\Web\UI\ActiveControls\TActiveLinkButton;
  * ```
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentLink extends TActiveLinkButton implements IConsentControl
 {

@@ -27,6 +27,7 @@ use Prado\TComponent;
  * builds a TDataSubject and hands it to `TPrivacyModule`.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TDataSubject extends TComponent
 {

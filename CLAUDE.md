@@ -10,9 +10,9 @@ and a records-of-processing registry. Class names are vendor-neutral so parts ca
 
 ## Version
 
-- Unreleased; the first release will be **v1.0.0**. Targets PRADO 4.4 (`pradosoft/prado`
-  `master`). Symbols released through v1.0.0 carry no `@since` tags; a public symbol added after
-  v1.0.0 gets `@since` with the version it ships in.
+- Unreleased; the first release is **0.1.0**. Targets PRADO 4.4 (`pradosoft/prado` `master`).
+  Every type carries `@since 0.1.0` in its class docblock; a type or public method added later
+  carries `@since` with the version it ships in.
 - Record every user-visible change under `## [Unreleased]` in `CHANGELOG.md` as it lands.
 - Supported and CI-tested PHP: **8.1, 8.2, 8.3, 8.4, 8.5**.
 

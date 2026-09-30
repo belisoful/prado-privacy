@@ -22,6 +22,7 @@ use belisoful\Privacy\Retention\IRetentionPurger;
  * entries created before a cutoff.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 interface IConsentLog extends IRetentionPurger
 {

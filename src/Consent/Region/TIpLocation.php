@@ -26,6 +26,7 @@ use Prado\TComponent;
  * instead of a code.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TIpLocation extends TComponent
 {

@@ -34,6 +34,7 @@ use Prado\TComponent;
  * ```
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TDbConsentLog extends TComponent implements IConsentLog
 {

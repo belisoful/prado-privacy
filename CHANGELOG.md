@@ -6,6 +6,8 @@ All notable changes to `belisoful/prado-privacy` are recorded here. The format f
 
 ## [Unreleased]
 
+The first release, 0.1.0.
+
 ### Added
 
 - The package, stamped from the PRADO extension skeleton (`belisoful/prado-extension`), with

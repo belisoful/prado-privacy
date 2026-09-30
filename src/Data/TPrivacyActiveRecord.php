@@ -26,6 +26,7 @@ use Prado\Data\TDbConnection;
  * ```
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 abstract class TPrivacyActiveRecord extends TActiveRecord
 {

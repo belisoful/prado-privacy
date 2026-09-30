@@ -24,6 +24,7 @@ use Prado\TEnumerable;
  * | `none` | anywhere else | granted, except where GPC applies | not shown |
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentMode extends TEnumerable
 {

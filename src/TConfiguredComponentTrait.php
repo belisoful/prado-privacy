@@ -27,6 +27,7 @@ use Prado\TComponent;
  * | a string | the id of an application module, loaded when first used |
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 trait TConfiguredComponentTrait
 {

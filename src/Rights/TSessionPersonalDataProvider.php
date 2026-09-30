@@ -27,6 +27,7 @@ use Prado\TModule;
  * provider exports nothing and reports the sessions as retained until they expire.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TSessionPersonalDataProvider extends TModule implements IPersonalDataProvider
 {

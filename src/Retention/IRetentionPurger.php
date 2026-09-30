@@ -19,6 +19,7 @@ namespace belisoful\Privacy\Retention;
  * calls a module's method.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 interface IRetentionPurger
 {

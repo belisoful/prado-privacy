@@ -21,6 +21,7 @@ use Prado\TEventParameter;
  * `withdraw`). `getChanged()` lists the categories whose state differs.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentChangedEventParameter extends TEventParameter
 {

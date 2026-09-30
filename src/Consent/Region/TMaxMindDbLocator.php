@@ -42,6 +42,7 @@ use Prado\Util\Log\TLogger;
  * ```
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TMaxMindDbLocator extends TComponent implements IIpLocator
 {

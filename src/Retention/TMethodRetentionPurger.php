@@ -27,6 +27,7 @@ use Prado\TPropertyValue;
  * ```
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TMethodRetentionPurger extends TComponent implements IRetentionPurger
 {

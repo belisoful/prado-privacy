@@ -24,6 +24,7 @@ use Prado\TComponent;
  * (`TPrivacyDbConnectionTrait`).
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TDbPrivacyRequestLog extends TComponent implements IPrivacyRequestLog
 {

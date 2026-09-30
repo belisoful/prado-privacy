@@ -37,6 +37,7 @@ use Prado\Web\THttpRequest;
  * ```
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class THeaderRegionResolver extends TComponent implements IRegionResolver
 {

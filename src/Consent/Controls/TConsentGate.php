@@ -38,6 +38,7 @@ use Prado\Web\UI\WebControls\TPlaceHolder;
  * changes the consent, the gate re-renders in place.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentGate extends TActivePanel implements IConsentControl
 {

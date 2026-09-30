@@ -22,6 +22,7 @@ namespace belisoful\Privacy\Consent;
  * alternatives.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 interface IConsentStore
 {

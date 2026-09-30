@@ -20,6 +20,7 @@ use Prado\TComponent;
  * choice without holding an IP address, a user name or a user agent in clear.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentLogContext extends TComponent
 {

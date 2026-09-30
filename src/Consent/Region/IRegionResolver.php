@@ -30,6 +30,7 @@ use Prado\Web\THttpRequest;
  * A resolver never throws for a request it cannot place; it returns null.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 interface IRegionResolver
 {

@@ -18,6 +18,7 @@ namespace belisoful\Privacy\Retention;
  * is not a module declares through the global event `fxGetProcessingActivities` instead.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 interface IProcessingActivityProvider
 {

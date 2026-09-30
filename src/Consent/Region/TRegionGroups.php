@@ -33,6 +33,7 @@ use Prado\Exceptions\TInvalidDataValueException;
  * region (`US-CA`) matches its own code, its country (`US`), and any group holding either.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TRegionGroups
 {

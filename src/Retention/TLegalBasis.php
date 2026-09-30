@@ -27,6 +27,7 @@ use Prado\TEnumerable;
  * | `legitimate_interests` | (f) |
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TLegalBasis extends TEnumerable
 {

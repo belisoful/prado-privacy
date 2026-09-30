@@ -25,6 +25,7 @@ use Prado\TComponent;
  * `{"id":…, "v":…, "t":…, "e":…, "s":…, "c":{"analytics":1, "marketing":0}}`.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentRecord extends TComponent
 {

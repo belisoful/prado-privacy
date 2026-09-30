@@ -24,6 +24,7 @@ use Prado\Web\UI\ActiveControls\TCallbackEventParameter;
  * consent, and the default stylesheet.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 trait TConsentControlTrait
 {

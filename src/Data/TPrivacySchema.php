@@ -29,6 +29,7 @@ use Prado\Exceptions\TConfigurationException;
  * Times are integer Unix seconds. Identifiers of people are HMAC-SHA256 hex digests.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TPrivacySchema
 {

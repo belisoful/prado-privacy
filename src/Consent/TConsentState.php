@@ -24,6 +24,7 @@ use Prado\TEnumerable;
  * | `undecided` | consent is required and the visitor has not chosen; the category may not be used |
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentState extends TEnumerable
 {

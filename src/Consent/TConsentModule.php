@@ -80,6 +80,7 @@ use Prado\Xml\TXmlElement;
  * @method array dyConsent(array $consent) filters the effective consent, category => state
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentModule extends TModule implements IProcessingActivityProvider
 {

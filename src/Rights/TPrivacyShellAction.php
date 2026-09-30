@@ -36,6 +36,7 @@ use Prado\TModule;
  * `--by=<name>` records who ran the request (`operator` by default).
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TPrivacyShellAction extends TShellAction
 {

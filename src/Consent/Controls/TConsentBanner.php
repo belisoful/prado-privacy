@@ -57,6 +57,7 @@ use Prado\Web\UI\TTemplateControl;
  * @property-read \Prado\Web\UI\ActiveControls\TActiveButton $Customize the button that opens the preferences
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TConsentBanner extends TTemplateControl implements IConsentControl
 {

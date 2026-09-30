@@ -21,6 +21,7 @@ use Prado\Web\THttpRequest;
  * right for a site that serves the EU, the UK or Switzerland and does not locate its visitors.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TScopeAllRegionResolver extends TComponent implements IRegionResolver
 {

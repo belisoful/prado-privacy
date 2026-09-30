@@ -29,6 +29,7 @@ use Prado\TPropertyValue;
  * With `AutoCreateTables` (the default) the component creates its tables on first use.
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 trait TPrivacyDbConnectionTrait
 {

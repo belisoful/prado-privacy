@@ -52,6 +52,7 @@ use Prado\Xml\TXmlElement;
  * ```
  *
  * @author Brad Anderson <belisoful@icloud.com>
+ * @since 0.1.0
  */
 class TIpRegionResolver extends TModule implements IRegionResolver, IProcessingActivityProvider
 {
