@@ -13,6 +13,7 @@ namespace belisoful\Privacy\Consent;
 use belisoful\Privacy\Data\TConsentStateRecord;
 use belisoful\Privacy\Data\TPrivacyDbConnectionTrait;
 use belisoful\Privacy\Data\TPrivacySchema;
+use belisoful\Privacy\Retention\IRetentionPurger;
 use belisoful\Privacy\TPrivacyHash;
 use Prado\Data\ActiveRecord\TActiveRecordCriteria;
 use Prado\Prado;
@@ -28,7 +29,8 @@ use Prado\TPropertyValue;
  * on the first one.
  *
  * The connection comes from `ConnectionID`, or the runtime sqlite database without one
- * (`TPrivacyDbConnectionTrait`).
+ * (`TPrivacyDbConnectionTrait`). As an `IRetentionPurger`, the store removes the choices that
+ * expired before a cutoff.
  *
  * ```xml
  * <module id="belisoful/prado-privacy">
@@ -38,7 +40,7 @@ use Prado\TPropertyValue;
  *
  * @author Brad Anderson <belisoful@icloud.com>
  */
-class TDbConsentStore extends TCookieConsentStore
+class TDbConsentStore extends TCookieConsentStore implements IRetentionPurger
 {
 	use TPrivacyDbConnectionTrait;
 
@@ -97,6 +99,17 @@ class TDbConsentStore extends TCookieConsentStore
 			$records[] = $this->toRecord($row);
 		}
 		return \array_values(\array_filter($records));
+	}
+
+	/**
+	 * Deletes the choices that expired before a time; the retention policy `consent-state` runs it.
+	 * @param int $before a Unix time
+	 * @return int the number of choices deleted
+	 */
+	public function purge(int $before): int
+	{
+		return (int) TConsentStateRecord::on($this->getTableConnection(TPrivacySchema::CONSENT_STATE))
+			->deleteAll('expires_at < :before', [':before' => $before]);
 	}
 
 	/**

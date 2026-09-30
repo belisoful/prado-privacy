@@ -10,11 +10,14 @@
 
 namespace belisoful\Privacy\Rights;
 
+use belisoful\Privacy\Retention\IProcessingActivityProvider;
+use belisoful\Privacy\Retention\TLegalBasis;
+use belisoful\Privacy\Retention\TProcessingActivity;
+use belisoful\Privacy\Retention\TRetentionModule;
 use belisoful\Privacy\TConfiguredComponentTrait;
 use Prado\Exceptions\TConfigurationException;
 use Prado\Exceptions\TInvalidDataValueException;
 use Prado\Prado;
-use Prado\Shell\TShellApplication;
 use Prado\TModule;
 use Prado\TPropertyValue;
 use Prado\Util\Clock\TApplicationClockAwareTrait;
@@ -60,7 +63,7 @@ use Prado\Xml\TXmlElement;
  *
  * @author Brad Anderson <belisoful@icloud.com>
  */
-class TPrivacyModule extends TModule
+class TPrivacyModule extends TModule implements IProcessingActivityProvider
 {
 	use TApplicationClockAwareTrait;
 	use TConfiguredComponentTrait;
@@ -133,12 +136,24 @@ class TPrivacyModule extends TModule
 	 */
 	public function registerShellAction(): bool
 	{
-		$app = $this->getApplication();
-		if (!($app instanceof TShellApplication) || $app->hasShellActionClass(self::SHELL_CLASS)) {
-			return false;
-		}
-		$app->addShellActionClass(['class' => self::SHELL_CLASS, 'Module' => $this]);
-		return true;
+		return TPrivacyShellAction::register($this);
+	}
+
+	/**
+	 * @return TProcessingActivity[] answering data subject requests, and keeping the record of them
+	 */
+	public function getProcessingActivities(): array
+	{
+		return [new TProcessingActivity([
+			'Name' => 'privacy-requests',
+			'Purpose' => 'Answering data subject requests (access, portability, erasure, rectification) and showing they were answered',
+			'LegalBasis' => TLegalBasis::LegalObligation,
+			'LegalBasisNote' => 'GDPR Art. 5(2), 12 to 17 and 20; CCPA/CPRA §1798.100 to .106',
+			'SubjectCategories' => 'data subjects who make a request',
+			'DataCategories' => 'request type, hashed user name, requester, dates, outcome per provider',
+			'RetentionPolicy' => $this->getLogRequests() ? TRetentionModule::PRIVACY_REQUESTS : '',
+			'RetentionPeriod' => $this->getLogRequests() ? '' : 'not recorded',
+		])];
 	}
 
 	// --- providers ---------------------------------------------------------------------------

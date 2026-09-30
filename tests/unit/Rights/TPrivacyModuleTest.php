@@ -166,6 +166,17 @@ class TPrivacyModuleTest extends PrivacyTestCase
 		$module->openRequest('delete', new TDataSubject('alice'));
 	}
 
+	public function testProcessingActivity()
+	{
+		$activity = (new TPrivacyModule())->getProcessingActivities()[0];
+		$this->assertSame('privacy-requests', $activity->getName());
+		$this->assertSame('privacy-requests', $activity->getRetentionPolicy());
+		$this->assertSame('', $activity->getRetentionPeriod());
+		$off = (new TPrivacyModule())->setLogRequests(false)->getProcessingActivities()[0];
+		$this->assertSame('', $off->getRetentionPolicy());
+		$this->assertSame('not recorded', $off->getRetentionPeriod());
+	}
+
 	public function testShellActionRegistration()
 	{
 		$module = new TPrivacyModule();

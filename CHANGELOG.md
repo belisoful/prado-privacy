@@ -35,3 +35,12 @@ All notable changes to `belisoful/prado-privacy` are recorded here. The format f
 - Built-in providers: `TUserPersonalDataProvider` (with `onExportUser`, `onEraseUser`,
   `onRectifyUser`), `TSessionPersonalDataProvider` and `TConsentPersonalDataProvider`.
 - `prado-cli privacy/export`, `privacy/erase` and `privacy/requests` (`TPrivacyShellAction`).
+- Retention: `IRetentionPurger`, `TRetentionPolicy` (ISO 8601 periods), `TDbRetentionPurger`,
+  `TMethodRetentionPurger`, and `TRetentionModule` (`purge()` for `TCronModule`, built-in policies
+  for the consent log, expired consent choices and the request log, `onPurged`,
+  `fxGetCronTaskInfos`). The consent log, the request log and `TDbConsentStore` are purgers.
+- Records of processing: `TProcessingActivity`, `TLegalBasis`, `IProcessingActivityProvider`, and
+  `TProcessingRegistry` (`<activity>` elements, module discovery, `fxGetProcessingActivities`,
+  JSON and Markdown output). `TConsentModule`, `TPrivacyModule` and `TIpRegionResolver` declare
+  their activities.
+- `prado-cli privacy/purge` and `privacy/ropa`.

@@ -439,6 +439,21 @@ class TConsentModuleTest extends PrivacyTestCase
 		$this->assertSame([$control], $module->getConsentControls());
 	}
 
+	public function testProcessingActivities()
+	{
+		$module = $this->module();
+		$activities = $module->getProcessingActivities();
+		$this->assertSame(['consent-choice'], \array_map(fn ($a) => $a->getName(), $activities));
+		$this->assertSame('', $activities[0]->getRetentionPolicy(), 'a session store: no purge policy');
+		$this->assertSame('180 days, then asked again', $activities[0]->getRetentionPeriod());
+		$this->assertNotContains('hashed user name', $activities[0]->getDataCategories());
+		$module->setLogEnabled(true);
+		$log = $module->getProcessingActivities()[1];
+		$this->assertSame('consent-log', $log->getName());
+		$this->assertSame('legal_obligation', $log->getLegalBasis());
+		$this->assertNotContains('hashed user agent', $log->getDataCategories());
+	}
+
 	public function testRealConsentIdsAreRandomHex()
 	{
 		$module = new ProbeConsentModule();

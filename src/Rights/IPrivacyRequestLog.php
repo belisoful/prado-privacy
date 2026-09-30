@@ -10,6 +10,8 @@
 
 namespace belisoful\Privacy\Rights;
 
+use belisoful\Privacy\Retention\IRetentionPurger;
+
 /**
  * IPrivacyRequestLog interface.
  *
@@ -18,11 +20,12 @@ namespace belisoful\Privacy\Rights;
  * request is opened, then completed. Entries refer to the subject by hash only.
  *
  * An entry is an array with the keys `id`, `type`, `subject_hash`, `requested_by`,
- * `requested_at`, `due_at`, `completed_at`, `status` and `outcome` (decoded).
+ * `requested_at`, `due_at`, `completed_at`, `status` and `outcome` (decoded). As an
+ * `IRetentionPurger`, a log removes the requests made before a cutoff.
  *
  * @author Brad Anderson <belisoful@icloud.com>
  */
-interface IPrivacyRequestLog
+interface IPrivacyRequestLog extends IRetentionPurger
 {
 	/**
 	 * Records a new request as pending.
@@ -60,11 +63,4 @@ interface IPrivacyRequestLog
 	 * @return array<int, array> the pending requests, oldest first
 	 */
 	public function findPending(): array;
-
-	/**
-	 * Removes requests made before a time.
-	 * @param int $before a Unix time
-	 * @return int the number removed
-	 */
-	public function purge(int $before): int;
 }

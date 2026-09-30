@@ -102,4 +102,13 @@ class TDbConsentStoreTest extends PrivacyTestCase
 		$this->assertSame(2, $store->deleteBySubject($alice));
 		$this->assertSame(1, TestDb::count('privacy_consent_state'));
 	}
+
+	public function testPurgeRemovesExpiredChoices()
+	{
+		$store = $this->store();
+		$store->save($this->record(\str_repeat('1', 32), 'granted', self::NOW - 5000));
+		$store->save($this->record(\str_repeat('2', 32), 'granted', self::NOW));
+		$this->assertSame(1, $store->purge(self::NOW));
+		$this->assertSame(1, TestDb::count('privacy_consent_state'));
+	}
 }

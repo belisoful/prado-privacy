@@ -97,6 +97,40 @@ class TPrivacyShellActionTest extends PrivacyTestCase
 		}
 	}
 
+	public function testPurge()
+	{
+		$action = $this->action(null);
+		$action->actionPurge(['privacy/purge']);
+		$this->assertStringContainsString('No TRetentionModule is configured.', $this->out->flush());
+		$retention = (new \belisoful\Privacy\Retention\TRetentionModule())->setIncludeBuiltIn(false);
+		$retention->addPolicy(new \belisoful\Privacy\Retention\TRetentionPolicy('uploads', 'P1D', (new \belisoful\Privacy\Retention\TDbRetentionPurger())->setDbConnection(TestDb::reset())->setTable('privacy_request')->setTimeColumn('requested_at')));
+		$retention->addPolicy(new \belisoful\Privacy\Retention\TRetentionPolicy('broken', 'P1D'));
+		$this->addModule('retention', $retention);
+		$this->assertSame($retention, $action->getRetentionModule());
+		$this->assertTrue($action->actionPurge(['privacy/purge']));
+		$printed = $this->out->flush();
+		$this->assertStringContainsString('uploads: 0 removed', $printed);
+		$this->assertStringContainsString('broken: failed (see the application log)', $printed);
+		$action->setRetentionModule(null);
+	}
+
+	public function testRopa()
+	{
+		$action = $this->action(null);
+		$action->actionRopa(['privacy/ropa']);
+		$this->assertStringContainsString('No TProcessingRegistry is configured.', $this->out->flush());
+		$registry = (new \belisoful\Privacy\Retention\TProcessingRegistry())->setAutoDiscover(false)->setController('Example');
+		$registry->addActivity(['Name' => 'accounts', 'LegalBasis' => 'contract']);
+		$action->setRegistry($registry);
+		$this->assertSame($registry, $action->getRegistry());
+		$this->assertTrue($action->actionRopa(['privacy/ropa']));
+		$this->assertStringContainsString('# Records of processing activities', $this->out->flush());
+		$action->actionRopa(['privacy/ropa', 'json']);
+		$this->assertSame('Example', \json_decode($this->out->flush(), true)['controller']);
+		$this->addModule('ropa', $registry);
+		$this->assertSame($registry, $this->action(null)->getRegistry(), 'found by type');
+	}
+
 	public function testFindsTheApplicationsModule()
 	{
 		$module = $this->module();

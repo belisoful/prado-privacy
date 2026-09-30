@@ -10,6 +10,9 @@
 
 namespace belisoful\Privacy\Consent\Region;
 
+use belisoful\Privacy\Retention\IProcessingActivityProvider;
+use belisoful\Privacy\Retention\TLegalBasis;
+use belisoful\Privacy\Retention\TProcessingActivity;
 use belisoful\Privacy\TConfiguredComponentTrait;
 use belisoful\Privacy\TPrivacyHash;
 use Prado\Caching\ICache;
@@ -38,6 +41,9 @@ use Prado\Xml\TXmlElement;
  * 4. The locator answers; a failure is unknown. An unknown region means the visitor is asked for
  *    consent: the resolver fails closed.
  *
+ * The resolver declares its processing activity to `TProcessingRegistry`, with the provider of a
+ * `THttpIpLocator` as a recipient.
+ *
  * ```xml
  * <module id="geo-ip" class="belisoful\Privacy\Consent\Region\TIpRegionResolver" TrustedProxies="10.0.0.0/8, 2001:db8::/32">
  *   <locator class="belisoful\Privacy\Consent\Region\TMaxMindDbLocator" File="/var/lib/GeoIP/GeoLite2-City.mmdb" />
@@ -47,7 +53,7 @@ use Prado\Xml\TXmlElement;
  *
  * @author Brad Anderson <belisoful@icloud.com>
  */
-class TIpRegionResolver extends TModule implements IRegionResolver
+class TIpRegionResolver extends TModule implements IRegionResolver, IProcessingActivityProvider
 {
 	use TConfiguredComponentTrait;
 
@@ -104,6 +110,28 @@ class TIpRegionResolver extends TModule implements IRegionResolver
 		$region = $this->getLocator()->locate($ip)?->getRegion();
 		$cache?->set($key, $region ?? '', $region === null ? $this->getMissCacheExpire() : $this->getCacheExpire());
 		return $region;
+	}
+
+	/**
+	 * @return TProcessingActivity[] locating the visitor to apply the privacy law of their region
+	 */
+	public function getProcessingActivities(): array
+	{
+		$locator = $this->_locator === null ? null : $this->getLocator();
+		$recipient = '';
+		if ($locator instanceof THttpIpLocator) {
+			$recipient = ($locator->getService() ?: (string) \parse_url($locator->getUrl(), PHP_URL_HOST)) . ' (IP geolocation provider)';
+		}
+		return [new TProcessingActivity([
+			'Name' => 'region-resolution',
+			'Purpose' => 'Locating the visitor by IP address to apply the privacy law of their region',
+			'LegalBasis' => TLegalBasis::LegitimateInterests,
+			'LegalBasisNote' => 'applying the consent rules the visitor\'s law requires (GDPR Art. 6(1)(f), with 6(1)(c))',
+			'SubjectCategories' => 'website visitors',
+			'DataCategories' => 'IP address, derived country and subdivision',
+			'Recipients' => $recipient,
+			'RetentionPeriod' => 'the region is cached ' . $this->getCacheExpire() . ' seconds under an HMAC of the address; the address is not stored',
+		])];
 	}
 
 	/**

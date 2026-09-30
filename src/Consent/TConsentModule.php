@@ -14,6 +14,10 @@ use belisoful\Privacy\Consent\Controls\IConsentControl;
 use belisoful\Privacy\Consent\Region\IRegionResolver;
 use belisoful\Privacy\Consent\Region\TRegionGroups;
 use belisoful\Privacy\Consent\Region\TScopeAllRegionResolver;
+use belisoful\Privacy\Retention\IProcessingActivityProvider;
+use belisoful\Privacy\Retention\TLegalBasis;
+use belisoful\Privacy\Retention\TProcessingActivity;
+use belisoful\Privacy\Retention\TRetentionModule;
 use belisoful\Privacy\TConfiguredComponentTrait;
 use belisoful\Privacy\TPrivacyHash;
 use Prado\Exceptions\TConfigurationException;
@@ -69,12 +73,15 @@ use Prado\Xml\TXmlElement;
  * unknown, so every visitor is asked). The dynamic event `dyResolveRegion` lets a behavior
  * override it, and `dyConsent` lets a behavior adjust the effective consent.
  *
+ * The module declares its processing activities to `TProcessingRegistry`: the stored choice, the
+ * consent log when enabled, and those of a resolver that declares its own (`TIpRegionResolver`).
+ *
  * @method ?string dyResolveRegion(?string $region, \Prado\Web\THttpRequest $request) filters the resolved region
  * @method array dyConsent(array $consent) filters the effective consent, category => state
  *
  * @author Brad Anderson <belisoful@icloud.com>
  */
-class TConsentModule extends TModule
+class TConsentModule extends TModule implements IProcessingActivityProvider
 {
 	use TApplicationClockAwareTrait;
 	use TConfiguredComponentTrait;
@@ -493,6 +500,40 @@ class TConsentModule extends TModule
 		$this->_storedRecord = false;
 		$this->_region = false;
 		$this->_consent = null;
+	}
+
+	/**
+	 * @return TProcessingActivity[] the stored choice, the consent log when enabled, and the region resolver's activities
+	 */
+	public function getProcessingActivities(): array
+	{
+		$db = $this->getStore() instanceof TDbConsentStore;
+		$activities = [new TProcessingActivity([
+			'Name' => 'consent-choice',
+			'Purpose' => 'Remembering the visitor\'s consent choice, so storage and third-party content follow it',
+			'LegalBasis' => TLegalBasis::LegalObligation,
+			'LegalBasisNote' => 'ePrivacy Directive Art. 5(3) and GDPR Art. 7: storage needs the consent this records',
+			'SubjectCategories' => 'website visitors',
+			'DataCategories' => 'consent id, choice per category, policy version, time' . ($db ? ', hashed user name' : ''),
+			'RetentionPolicy' => $db ? TRetentionModule::CONSENT_STATE : '',
+			'RetentionPeriod' => $this->getExpires() . ' days, then asked again',
+		])];
+		if ($this->getLogEnabled()) {
+			$activities[] = new TProcessingActivity([
+				'Name' => 'consent-log',
+				'Purpose' => 'Demonstrating that consent was given or refused',
+				'LegalBasis' => TLegalBasis::LegalObligation,
+				'LegalBasisNote' => 'GDPR Art. 7(1)',
+				'SubjectCategories' => 'website visitors',
+				'DataCategories' => 'consent id, choice per category, policy version, time, region, GPC signal, hashed IP address, hashed user name' . ($this->getLogUserAgent() ? ', hashed user agent' : ''),
+				'RetentionPolicy' => TRetentionModule::CONSENT_LOG,
+			]);
+		}
+		$resolver = $this->getRegionResolver();
+		if ($resolver instanceof IProcessingActivityProvider) {
+			\array_push($activities, ...$resolver->getProcessingActivities());
+		}
+		return $activities;
 	}
 
 	// --- region and GPC ----------------------------------------------------------------------

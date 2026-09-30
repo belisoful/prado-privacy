@@ -8,8 +8,8 @@ subject rights (export, erasure, rectification), retention, and records of proce
 The class names carry no vendor prefix (`TConsentModule`, not `PrivacyConsentModule`), so parts
 of the package can be proposed to `pradosoft/prado`.
 
-> **Status: in development.** Consent management and data subject rights are complete; retention
-> and records of processing, and the Google Analytics binding follow. The design is recorded in
+> **Status: in development.** Consent management, data subject rights, retention and records of
+> processing are complete; the Google Analytics binding follows. The design is recorded in
 > [agents/working/DESIGN_2026-09-29.md](agents/working/DESIGN_2026-09-29.md).
 
 This package supplies the mechanism. The site owner remains responsible for the policy text, the
@@ -238,7 +238,77 @@ From the command line, in a `TShellApplication`:
 prado-cli privacy/export alice --by=dpo
 prado-cli privacy/erase alice --by=dpo
 prado-cli privacy/requests overdue
+prado-cli privacy/purge
+prado-cli privacy/ropa json
 ```
+
+## Retention
+
+`TRetentionModule` holds a retention policy per kind of data (GDPR Art. 5(1)(e)) and purges what
+is past it. `TCronModule` runs the purge:
+
+```xml
+<module id="retention" class="belisoful\Privacy\Retention\TRetentionModule" ConsentLogPeriod="P3Y" RequestLogPeriod="P3Y">
+	<policy Name="orders" Period="P10Y" Description="Invoices: commercial and tax law">
+		<purger class="belisoful\Privacy\Retention\TDbRetentionPurger" ConnectionID="db" Table="orders" TimeColumn="created_at" />
+	</policy>
+	<policy Name="uploads" Period="P90D">
+		<purger class="belisoful\Privacy\Retention\TMethodRetentionPurger" Method="uploads->purgeBefore" />
+	</policy>
+</module>
+<module id="cron" class="Prado\Util\Cron\TCronModule">
+	<job Name="privacy-retention" Schedule="17 3 * * *" Task="retention->purge" />
+</module>
+```
+
+A `Period` is an ISO 8601 duration (`P30D`, `P6M`, `P3Y`, `PT12H`). Purgers implement
+`IRetentionPurger::purge(int $before): int`:
+
+| Purger | Removes |
+|---|---|
+| `TDbRetentionPurger` | rows of `Table` whose `TimeColumn` (`unix` seconds or UTC `datetime`) is before the cutoff, and that match `Condition` |
+| `TMethodRetentionPurger` | whatever `moduleId->method($before)` removes |
+| the consent log, the request log, `TDbConsentStore` | their own entries; the store removes expired choices |
+
+The module adds policies for this package's data (`IncludeBuiltIn`): `consent-log` and
+`privacy-requests` (three years by default, the limitation period for claims in many member
+states) and `consent-state` (expired `TDbConsentStore` rows). A configured policy of the same name
+overrides one. A failing policy is logged and reported as -1 while the others run; `onPurged`
+carries the counts, and `prado-cli privacy/purge` runs it by hand. The module lists its task in
+`prado-cli cron/tasks` through `fxGetCronTaskInfos`.
+
+## Records of processing
+
+`TProcessingRegistry` assembles the records of processing activities (GDPR Art. 30): the
+controller's details and every activity the application declares.
+
+```xml
+<module id="ropa" class="belisoful\Privacy\Retention\TProcessingRegistry"
+	Controller="Example Ltd, 1 Main Street" Contact="privacy@example.com" DpoContact="dpo@example.com">
+	<activity Name="accounts" Purpose="Running user accounts" LegalBasis="contract"
+		SubjectCategories="customers" DataCategories="name, email address, password hash"
+		RetentionPeriod="until the account is closed" SecurityMeasures="TLS, hashed passwords" />
+	<activity Name="orders" Purpose="Selling and shipping" LegalBasis="contract" RetentionPolicy="orders"
+		Recipients="Stripe (processor)" Transfers="US: EU-US Data Privacy Framework" />
+</module>
+```
+
+Activities come from `<activity>` elements, from every loaded module that implements
+`IProcessingActivityProvider` (this package's `TConsentModule`, `TPrivacyModule` and
+`TIpRegionResolver` declare theirs), and from any component's `fxGetProcessingActivities` global
+event handler. A `RetentionPolicy` is resolved against `TRetentionModule`, so the record states
+the period the purge enforces. `toArray()`, `toJson()` and `toMarkdown()` give the record;
+`prado-cli privacy/ropa` prints it (`json` for JSON).
+
+| `TProcessingActivity` | Art. 30(1) |
+|---|---|
+| `Name`, `Purpose` | (b) purposes |
+| `LegalBasis` (`consent`, `contract`, `legal_obligation`, `vital_interests`, `public_task`, `legitimate_interests`), `LegalBasisNote` | Art. 6(1) |
+| `SubjectCategories`, `DataCategories` | (c) |
+| `Recipients` | (d) |
+| `Transfers` | (e) |
+| `RetentionPolicy`, `RetentionPeriod` | (f) |
+| `SecurityMeasures` | (g) |
 
 ## Development
 

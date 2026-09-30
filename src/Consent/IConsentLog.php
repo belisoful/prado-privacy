@@ -10,17 +10,20 @@
 
 namespace belisoful\Privacy\Consent;
 
+use belisoful\Privacy\Retention\IRetentionPurger;
+
 /**
  * IConsentLog interface.
  *
  * IConsentLog appends every recorded choice, so a controller can demonstrate consent (GDPR Art.
  * 7(1)). Entries are never updated. An entry is an array with the keys `consent_id`,
  * `created_at`, `version`, `categories` (category → granted|denied), `source`, `region`, `gpc`,
- * `ip_hash`, `subject_hash` and `user_agent_hash`.
+ * `ip_hash`, `subject_hash` and `user_agent_hash`. As an `IRetentionPurger`, a log removes the
+ * entries created before a cutoff.
  *
  * @author Brad Anderson <belisoful@icloud.com>
  */
-interface IConsentLog
+interface IConsentLog extends IRetentionPurger
 {
 	/**
 	 * Appends a choice.
@@ -40,11 +43,4 @@ interface IConsentLog
 	 * @return array<int, array<string, mixed>> the entries for the subject, oldest first
 	 */
 	public function findBySubject(string $subjectHash): array;
-
-	/**
-	 * Removes entries created before a time.
-	 * @param int $before a Unix time
-	 * @return int the number of entries removed
-	 */
-	public function purge(int $before): int;
 }

@@ -33,6 +33,10 @@ and a records-of-processing registry. Class names are vendor-neutral so parts ca
 - Data subject rights: `TPrivacyModule` runs `IPersonalDataProvider`s and records requests in
   `privacy_request`; the built-in providers cover users (through events), the session and the
   consent data. `prado-cli privacy/*` comes from `TPrivacyShellAction`.
+- Retention and records of processing: `TRetentionModule` purges by `TRetentionPolicy`
+  (`IRetentionPurger`; `task="retention->purge"` in `TCronModule`); `TProcessingRegistry`
+  collects `TProcessingActivity` declarations (`IProcessingActivityProvider`,
+  `fxGetProcessingActivities`).
 - belisoful/ganalytics is not a dependency. Its adapter (`GAnalyticsPrivacyConsentProvider`)
   lives in ganalytics; this README documents the category → Google consent type mapping.
 
