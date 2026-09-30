@@ -1,0 +1,92 @@
+/* prado-privacy default consent styles. TConsentBanner/TConsentPreferences DefaultStyle="false" drops this file. */
+.prado-consent-banner-inner,
+.prado-consent-preferences-inner {
+	position: fixed;
+	left: 1rem;
+	right: 1rem;
+	bottom: 1rem;
+	z-index: 10000;
+	max-width: 48rem;
+	margin: 0 auto;
+	padding: 1rem 1.25rem;
+	background: #fff;
+	color: #1a1a1a;
+	border: 1px solid #c8c8c8;
+	border-radius: 0.5rem;
+	box-shadow: 0 0.25rem 1.5rem rgba(0, 0, 0, 0.15);
+	font: 0.95rem/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.prado-consent-preferences-inner {
+	max-height: calc(100vh - 2rem);
+	overflow-y: auto;
+}
+.prado-consent-title {
+	margin: 0 0 0.75rem;
+	font-size: 1.15rem;
+}
+.prado-consent-text,
+.prado-consent-gpc {
+	margin: 0 0 0.75rem;
+}
+.prado-consent-gpc {
+	font-style: italic;
+}
+.prado-consent-category {
+	padding: 0.5rem 0;
+	border-top: 1px solid #e4e4e4;
+}
+.prado-consent-category label {
+	font-weight: 600;
+	margin-left: 0.35rem;
+}
+.prado-consent-description {
+	margin: 0.25rem 0 0 1.6rem;
+	color: #444;
+}
+.prado-consent-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-top: 0.75rem;
+}
+/* Accept and reject share this rule: the same size, weight and colors. */
+.prado-consent-button {
+	flex: 1 1 10rem;
+	padding: 0.6rem 1rem;
+	border: 1px solid #1a1a1a;
+	border-radius: 0.35rem;
+	background: #1a1a1a;
+	color: #fff;
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+.prado-consent-button-secondary {
+	flex: 0 1 auto;
+	padding: 0.6rem 1rem;
+	border: 1px solid transparent;
+	background: transparent;
+	color: #1a1a1a;
+	font: inherit;
+	text-decoration: underline;
+	cursor: pointer;
+}
+@media (prefers-color-scheme: dark) {
+	.prado-consent-banner-inner,
+	.prado-consent-preferences-inner {
+		background: #1f1f1f;
+		color: #f0f0f0;
+		border-color: #444;
+	}
+	.prado-consent-description {
+		color: #c8c8c8;
+	}
+	.prado-consent-button {
+		background: #f0f0f0;
+		color: #1a1a1a;
+		border-color: #f0f0f0;
+	}
+	.prado-consent-button-secondary {
+		color: #f0f0f0;
+	}
+}

@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" bootstrap="./tests/test_tools/phpunit_bootstrap.php" colors="true" stopOnFailure="false" xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.5/phpunit.xsd" cacheDirectory=".phpunit.cache">
+  <php>
+	<ini name="memory_limit" value="1G"/>
+  </php>
   <testsuites>
 	<testsuite name="unit">
 	  <directory suffix="Test.php">./tests/unit</directory>

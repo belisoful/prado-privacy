@@ -8,10 +8,9 @@ subject rights (export, erasure, rectification), retention, and records of proce
 The class names carry no vendor prefix (`TConsentModule`, not `PrivacyConsentModule`), so parts
 of the package can be proposed to `pradosoft/prado`.
 
-> **Status: in development.** The design is recorded in
-> [agents/working/DESIGN_2026-09-29.md](agents/working/DESIGN_2026-09-29.md). This README grows
-> with each phase: consent management, data subject rights, retention and records of processing,
-> then the Google Analytics binding.
+> **Status: in development.** Consent management is complete; data subject rights, retention and
+> records of processing, and the Google Analytics binding follow. The design is recorded in
+> [agents/working/DESIGN_2026-09-29.md](agents/working/DESIGN_2026-09-29.md).
 
 This package supplies the mechanism. The site owner remains responsible for the policy text, the
 categories a site uses, the legal basis of each processing activity, and the advice of counsel.
@@ -41,6 +40,154 @@ Load the extension by package name; the module class comes from `extra.prado.boo
 	<module id="belisoful/prado-privacy" Version="2026-09" />
 </modules>
 ```
+
+## Consent management
+
+`TConsentModule` holds the visitor's consent per category, and the controls ask for it, change it
+and gate content by it.
+
+```xml
+<modules>
+	<module id="belisoful/prado-privacy" Version="2026-09" LogEnabled="true">
+		<category Name="video" Title="Video" Description="Embedded YouTube and Vimeo players." />
+	</module>
+</modules>
+```
+
+```xml
+<com:TConsentBanner PolicyUrl="/privacy" />
+<com:TConsentPreferences />
+<com:TConsentGate Category="video">
+	<iframe src="https://www.youtube-nocookie.com/embed/…"></iframe>
+	<prop:DeniedTemplate><p>This video needs your consent. <com:TConsentLink Text="Allow video" /></p></prop:DeniedTemplate>
+</com:TConsentGate>
+<footer><com:TConsentLink PreferencesUrl="/privacy-settings" /> <com:TConsentLink Mode="optout" /></footer>
+```
+
+```php
+$consent = TConsentModule::findModule();
+if ($consent->isGranted('analytics')) { /* register the analytics script */ }
+$consent->attachEventHandler('onConsentChanged', fn ($sender, $param) => /* $param->getChanged() */ null);
+```
+
+### Categories and states
+
+| Category | Default | Meaning |
+|---|---|---|
+| `necessary` | always granted | storage the site needs: the session, security, this consent choice |
+| `analytics` | asked | measuring visits |
+| `marketing` | asked | advertising, ad measurement, sharing with ad partners (the "sale or sharing" of CCPA) |
+| `functional` | asked | embeds and features: maps, video, chat |
+| `personalization` | asked | remembering preferences to adapt content |
+
+`getConsent()` maps each category to `granted`, `denied` or `undecided`; `isGranted()` treats
+`undecided` as not granted. A `<category>` element adds a category or retitles a built-in one.
+Adding a category or changing the policy calls for a new `Version`: a choice made under another
+version counts as undecided, and the visitor is asked again.
+
+### Module properties
+
+| Property | Default | Purpose |
+|---|---|---|
+| `Version` | `1` | the policy version choices are made under |
+| `Expires` | `180` | days a choice lasts (1 to 395), for acceptance and rejection alike |
+| `Store` | `TCookieConsentStore` | where the choice is kept; `<store class="…"/>`, a module id, or an instance |
+| `LogEnabled` | `false` | append every choice to the consent log |
+| `Log` | `TDbConsentLog` | the log; `<log class="…" ConnectionID="db"/>` |
+| `LogUserAgent` | `false` | also log a hash of the user agent |
+| `RegionResolver` | `TScopeAllRegionResolver` | where the visitor is; `<resolver class="…"/>` or a module id |
+| `RequireConsentFor` | `EU, EEA, UK, CH` | regions asked before non-necessary storage (opt-in) |
+| `OptOutFor` | `US-GPC` | regions with an opt-out regime (California and the GPC states) |
+| `HonorGpc` | `everywhere` | where Global Privacy Control applies: `everywhere`, `required`, `off` |
+| `GpcCategories` | `marketing` | the categories GPC denies |
+
+The GDPR asks a controller to be able to demonstrate consent (Art. 7(1)). A site in scope sets
+`LogEnabled="true"`. Without a `ConnectionID`, the log writes to `protected/runtime/privacy.db`,
+which needs `pdo_sqlite`.
+
+### Stores
+
+| Store | Keeps the choice in | Notes |
+|---|---|---|
+| `TCookieConsentStore` | one cookie, `prado_consent` | signed with the application's validation key; HttpOnly, SameSite=Lax, Secure on https |
+| `TSessionConsentStore` | the session | lasts as long as the session; reading never starts one |
+| `TDbConsentStore` | `privacy_consent_state` | the browser holds only the consent id; a logged-in user gets their choice on another device |
+
+The consent cookie holds a choice the visitor asked to be remembered, so it is strictly necessary
+storage and needs no consent itself. Set a fixed `ValidationKey` on `TSecurityManager`: the cookie
+signature, the log's hashes and the cache keys use it.
+
+### Regions
+
+| Mode | Regions | Before a choice | Banner |
+|---|---|---|---|
+| opt-in | `RequireConsentFor`, and every visitor whose region is unknown | undecided | shown |
+| opt-out | `OptOutFor` | granted | none; `TConsentLink Mode="optout"` renders |
+| none | anywhere else | granted | none |
+
+The default resolver places nobody, so every visitor is in opt-in mode. That is the strictest
+reading, and right for a site that serves Europe without locating visitors. To place visitors:
+
+| Resolver | Source | Cost |
+|---|---|---|
+| `THeaderRegionResolver` | a CDN country header (`CF-IPCountry`, `CloudFront-Viewer-Country`, subdivision headers) | none; trust it only when the CDN sets it |
+| `TIpRegionResolver` + `TMaxMindDbLocator` | a local MaxMind DB file: GeoLite2 (free), GeoIP2, DB-IP Lite (free), IPinfo, IP2Location | a local lookup; needs `maxmind-db/reader` |
+| `TIpRegionResolver` + `THttpIpLocator` | a web API; presets for MaxMind, IPinfo, ipdata, ipgeolocation.io, Ipregistry, ipapi.co, ipstack, IP2Location.io, Abstract, BigDataCloud and DB-IP, or any JSON API by `Url` and dot paths | a request per visitor, cached |
+| `TChainRegionResolver` | the first of several that answers | |
+| your own `IRegionResolver` or `IIpLocator` | anything | |
+
+```xml
+<module id="geo" class="belisoful\Privacy\Consent\Region\TIpRegionResolver" TrustedProxies="10.0.0.0/8">
+	<locator class="belisoful\Privacy\Consent\Region\THttpIpLocator" Service="ipinfo" ApiKey="…" />
+</module>
+<module id="belisoful/prado-privacy" RegionResolver="geo" />
+```
+
+`TIpRegionResolver` reads `X-Forwarded-For` only behind a `TrustedProxies` peer, skips private
+and reserved addresses, caches each answer (a day) and each miss (an hour) under an HMAC of the
+address, and fails closed: a visitor it cannot place is asked for consent. A lookup through a web
+API sends the visitor's IP address to the provider before any consent. Prefer a CDN header or a
+local database, and list the provider as a recipient in the records of processing. Check each
+provider's current terms, quotas and endpoints; the presets reflect them as of this release.
+Behaviors can override the region with `dyResolveRegion` and the consent with `dyConsent`.
+
+### Global Privacy Control
+
+A `Sec-GPC: 1` request header is honored as follows (`HonorGpc="everywhere"`):
+
+| Region | Effect |
+|---|---|
+| opt-out (California; Colorado, Connecticut, Delaware, Maryland, Minnesota, Montana, New Hampshire, New Jersey, Oregon, Texas) | `marketing` is denied, overriding a banner grant or no choice. CCPA regulations §7025 make the signal a valid opt-out of sale and sharing. A grant the visitor makes per category in the preferences stands (§7025(c)(3)) |
+| opt-in (EU, EEA, UK, CH, unknown) | `marketing` starts denied and the banner says so; Accept all leaves it denied; only a grant in the preferences overrides the signal |
+| anywhere else | as for opt-out |
+
+`HonorGpc="required"` applies the signal in opt-out regions only; `off` ignores it. The `US-GPC`
+list follows the state laws in force at release; check it against current law, and extend it with
+`TRegionGroups::defineGroup()` or region codes.
+
+### Controls
+
+| Control | Renders | Actions |
+|---|---|---|
+| `TConsentBanner` | while consent is required and undecided | Reject all, Accept all (the same element and class: equal prominence), Customize |
+| `TConsentPreferences` | when opened, or always with `AlwaysVisible` | a checkbox per category (required ones disabled), Reject all, Accept all, Save, Close |
+| `TConsentLink` | always; `Mode="optout"` only in opt-out regions | opens the preferences; `PreferencesUrl` is followed without JavaScript |
+| `TConsentGate` | its content while `Category` is granted, its `DeniedTemplate` otherwise | |
+
+Every action works by ActiveControl callback (the banner, the preferences, the gates and the links
+re-render in place) and by postback without JavaScript. The packaged stylesheet
+(`assets/consent.css`, light and dark) is published unless `DefaultStyle="false"`. Texts are
+properties (`Message`, `AcceptText`, `RejectText`, …) passed through `Prado::localize()`.
+Withdrawing must be as easy as consenting (Art. 7(3)): put a `TConsentLink` in every page's footer.
+
+### Consent log and schema
+
+`TDbConsentLog` appends a row per choice to `privacy_consent_log`: the consent id (the link to
+the visitor's cookie), time, policy version, the full decision, the source (`banner`,
+`preferences`, `api`, `withdraw`), the region, whether GPC was present, and HMAC-SHA256 hashes of
+the IP address, the user name and (with `LogUserAgent`) the user agent. Nothing identifies a
+person in clear. Tables are created on first use (`AutoCreateTables`); `config/schema/` holds the
+DDL for sqlite, MySQL and PostgreSQL.
 
 ## Development
 

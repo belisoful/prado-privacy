@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<com:THead Title="Consent end-to-end" />
+<body>
+<com:TForm>
+	<h1>Consent end-to-end</h1>
+
+	<com:TActivePanel ID="State" CssClass="state">
+		<pre id="consent-state"><%= $this->getConsentJson() %></pre>
+	</com:TActivePanel>
+	<com:TActiveButton ID="Refresh" Text="Refresh state" OnCallback="refreshState" />
+
+	<com:TConsentGate ID="VideoGate" Category="video">
+		<div id="video-embed">[video player]</div>
+		<prop:DeniedTemplate>
+			<p id="video-denied">Video needs your consent. <com:TConsentLink ID="VideoLink" Text="Allow video" /></p>
+		</prop:DeniedTemplate>
+	</com:TConsentGate>
+
+	<com:TConsentGate ID="MarketingGate" Category="marketing">
+		<div id="ads">[ad]</div>
+	</com:TConsentGate>
+
+	<footer>
+		<com:TConsentLink ID="FooterLink" PreferencesUrl="?page=Settings" />
+		<com:TConsentLink ID="OptOutLink" Mode="optout" />
+	</footer>
+
+	<com:TConsentPreferences ID="Preferences" />
+	<com:TConsentBanner ID="Banner" PolicyUrl="/privacy" />
+</com:TForm>
+</body>
+</html>

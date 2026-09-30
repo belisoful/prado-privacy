@@ -150,6 +150,22 @@ English, present tense: clear, thorough, brief, timeless.
 - ActiveControls raise their click on a plain postback too. On a callback, a `TActivePanel`
   re-renders with `render($param->getNewWriter())`.
 - PRADO has no user-deletion API; erasure of application users goes through `onEraseUser`.
+- Pitfalls met while building this package:
+  - An event handler takes `($sender, $param)`; an `OnCallback` handler with one parameter gets
+    the sender.
+  - `TWebControl::renderContents()` calls `parent::renderChildren()`, which binds statically; a
+    control that filters its children overrides `renderContents()`.
+  - A template child whose ID equals a property of the template control (`Message`) is shadowed
+    by the property; template IDs end in `Text`, `Link`, `Notice` to stay apart.
+  - `Prado::using()` does not autoload an unloaded PSR-4 class; check `class_exists()` first.
+  - `TActiveRecord::populateObject()` creates found records without the finder's connection;
+    `TPrivacyActiveRecord` passes it on. `TActiveRecordGateway` caches table metadata by
+    connection string, so every `sqlite::memory:` connection shares one entry.
+  - `TPropertyValue::ensureEnum()` returns a constant's name; `ensureEnumValue()` its value.
+  - `Prado::getPathOfNamespace()` reads dots as separators; `TAssetManager::BasePath` is a
+    namespace (`Application.runtime.assets`).
+  - `$http_response_header` is deprecated in PHP 8.5; the transport reads the status from
+    `stream_get_meta_data()`.
 
 ## Testing
 
@@ -164,7 +180,18 @@ English, present tense: clear, thorough, brief, timeless.
 - Nothing reaches the network, a real PHP session or randomness. Databases are sqlite
   `:memory:`. The HTTP transport test talks to PHP's built-in server on the loopback only.
 - When working on one class or cluster, run only those tests with `--filter`.
-- Playwright specs (`tests/playwright/*.spec.js`) never depend on a third-party host.
+- Shared unit fixtures: `PrivacyTestCase` (installs `FakeRequest`, `RecordingResponse`,
+  `FakeSession`, a guest `FakeUser`, a `TSecurityManager` with a fixed key and a `TMockClock`, and
+  restores the application's own), `ProbeConsentModule` (predictable consent ids), `TestDb` (the
+  one shared sqlite `:memory:` connection, emptied per test), `LifecyclePage` (drives
+  init/preRender and renders the form), `ConsentControlTestCase` (a `TPageService`, an asset
+  manager on `Application.runtime.assets`, the module as `privacy`), `MmdbWriter` (builds a MaxMind
+  DB so the real reader runs), and `LocalHttpServer` with `app/geo-router.php` (a loopback IP API).
+- Playwright specs (`tests/playwright/*.spec.js`, helpers in `helpers.js`) drive
+  `tests/playwright/app`: the region comes from `X-Test-Region`/`X-Test-Subdivision` headers and
+  GPC from `Sec-GPC`, set per `test.use({ extraHTTPHeaders })`. `#consent-state` shows the module's
+  consent as JSON; `consentAfterReload()` reads it from a fresh GET. A spec that navigates after a
+  callback waits for the callback's response first. Specs never depend on a third-party host.
 
 ## Safeguards -- ANTI-PATTERNS
 

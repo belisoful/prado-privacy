@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html lang="en">
+<com:THead Title="Privacy settings" />
+<body>
+<com:TForm>
+	<h1>Privacy settings</h1>
+	<com:TConsentPreferences ID="Preferences" AlwaysVisible="true" Title="Your privacy settings" DefaultStyle="false" />
+</com:TForm>
+</body>
+</html>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The end-to-end application: the consent module (configured by class, because inside this
+  repository the package is the root project), the cookie store, the consent log in the runtime
+  sqlite database, and a header region resolver the specs drive with X-Test-Region.
+-->
+<application id="privacy-e2e" mode="Debug">
+	<modules>
+		<module id="security" class="Prado\Security\TSecurityManager" ValidationKey="prado-privacy-e2e-validation-key" />
+		<module id="privacy" class="belisoful\Privacy\Consent\TConsentModule" Version="2026-09" LogEnabled="true">
+			<category Name="video" Title="Video" Description="Embedded video players." />
+			<resolver class="belisoful\Privacy\Consent\Region\THeaderRegionResolver" CountryHeaders="X-Test-Region" SubdivisionHeaders="X-Test-Subdivision" />
+		</module>
+	</modules>
+	<services>
+		<service id="page" class="Prado\Web\Services\TPageService" DefaultPage="Home" />
+	</services>
+</application>
