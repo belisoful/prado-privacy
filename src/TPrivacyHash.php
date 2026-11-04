@@ -16,18 +16,23 @@ use Prado\Prado;
  * TPrivacyHash class.
  *
  * TPrivacyHash turns an identifier of a person (an IP address, a user name, a user agent) into
- * an HMAC-SHA256 hex digest keyed with the application's validation key
- * (`TSecurityManager::getValidationKey()`). The same identifier gives the same digest, so logs
- * link entries of one person; the digest cannot be reversed by enumerating values without the
- * key, which a plain SHA-256 of an IPv4 address (2³² values) can.
+ * an HMAC-SHA256 hex digest. Its key is derived from the application's validation key
+ * (`TSecurityManager::getValidationKey()`) as `HMAC-SHA256(validation key, "prado-privacy:hash")`,
+ * so the digests share no key with PRADO's own signatures. The same identifier gives the same
+ * digest, so logs link entries of one person; the digest cannot be reversed by enumerating values
+ * without the key, which a plain SHA-256 of an IPv4 address (2³² values) can.
  *
- * Changing the validation key breaks the link between old and new digests.
+ * Every server of an application needs the same, explicitly set validation key. Changing it
+ * breaks the link between old and new digests.
  *
  * @author Brad Anderson <belisoful@icloud.com>
  * @since 0.1.0
  */
 class TPrivacyHash
 {
+	/** The label the hash key is derived with. */
+	private const KEY_LABEL = 'prado-privacy:hash';
+
 	/** The purpose label of a user name. */
 	public const SUBJECT = 'subject';
 
@@ -48,7 +53,7 @@ class TPrivacyHash
 	 */
 	public static function hash(string $value, string $purpose = ''): string
 	{
-		$key = (string) Prado::getApplication()->getSecurityManager()->getValidationKey();
+		$key = \hash_hmac('sha256', self::KEY_LABEL, (string) Prado::getApplication()->getSecurityManager()->getValidationKey(), true);
 		return \hash_hmac('sha256', $purpose . "\0" . $value, $key);
 	}
 }

@@ -14,7 +14,8 @@ namespace belisoful\Privacy\Data;
  * TConsentStateRecord class.
  *
  * TConsentStateRecord is one row of `privacy_consent_state`, a visitor's current choice kept by
- * `TDbConsentStore`. `categories` holds JSON (category → `granted` or `denied`).
+ * `TDbConsentStore`. `categories` holds JSON, category → `1` (granted) or `0` (denied), as in
+ * `TConsentRecord::toArray()`.
  *
  * @author Brad Anderson <belisoful@icloud.com>
  * @since 0.1.0
@@ -29,7 +30,7 @@ class TConsentStateRecord extends TPrivacyActiveRecord
 	/** @var ?string the hash of the user name */
 	public $subject_hash;
 
-	/** @var string the decision, JSON */
+	/** @var string the decision, JSON: category => 1 (granted) or 0 (denied) */
 	public $categories;
 
 	/** @var string the policy version */

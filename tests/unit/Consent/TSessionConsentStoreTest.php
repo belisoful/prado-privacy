@@ -24,6 +24,8 @@ class TSessionConsentStoreTest extends PrivacyTestCase
 		$this->assertSame(1, $this->session->opens);
 		$this->assertSame($record->toArray(), $this->session->data[TSessionConsentStore::DEFAULT_SESSION_KEY]);
 		$this->assertSame('granted', $store->load()->getState('analytics'));
+		$store->reset();
+		$this->assertSame('granted', $store->load()->getState('analytics'), 'reset keeps the session');
 		$store->clear();
 		$this->assertSame([], $this->session->data);
 	}

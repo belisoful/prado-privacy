@@ -84,8 +84,9 @@ $consent->attachEventHandler('onConsentChanged', fn ($sender, $param) => /* $par
 
 `getConsent()` maps each category to `granted`, `denied` or `undecided`; `isGranted()` treats
 `undecided` as not granted. A `<category>` element adds a category or retitles a built-in one.
-Adding a category or changing the policy calls for a new `Version`: a choice made under another
-version counts as undecided, and the visitor is asked again.
+Changing the policy calls for a new `Version`: a choice made under another version counts as
+undecided, and the visitor is asked again. In opt-in regions a category added without a new
+`Version` is `undecided` on its own, and the banner asks again until a choice covers it.
 
 Outside opt-in regions an opt-out stands: the denials of a choice made under an older version, or
 expired while the store still holds it, still apply, and `withdraw()` stores every category denied
@@ -99,7 +100,7 @@ geolocation reports under their own codes (`GF`, `GP`, `MQ`, `YT`, `RE`, `MF`, `
 | Property | Default | Purpose |
 |---|---|---|
 | `Version` | `1` | the policy version choices are made under |
-| `Expires` | `180` | days a choice lasts (1 to 395), for acceptance and rejection alike |
+| `Expires` | `180` | days a choice lasts (1 to 395), for acceptance and rejection alike; lowering it does not shorten choices already stored |
 | `Store` | `TCookieConsentStore` | where the choice is kept; `<store class="…"/>`, a module id, or an instance |
 | `LogEnabled` | `false` | append every choice to the consent log |
 | `Log` | `TDbConsentLog` | the log; `<log class="…" ConnectionID="db"/>` |
@@ -118,13 +119,21 @@ which needs `pdo_sqlite`.
 
 | Store | Keeps the choice in | Notes |
 |---|---|---|
-| `TCookieConsentStore` | one cookie, `prado_consent` | signed with the application's validation key; HttpOnly, SameSite=Lax, Secure on https |
+| `TCookieConsentStore` | one cookie, `prado_consent` | signed with `TSecurityManager::hashCookieData()` (the `CookieValidationKey`); HttpOnly, SameSite=Lax, Secure on https |
 | `TSessionConsentStore` | the session | lasts as long as the session; reading never starts one |
-| `TDbConsentStore` | `privacy_consent_state` | the browser holds only the consent id; a logged-in user gets their choice on another device |
+| `TDbConsentStore` | `privacy_consent_state` | the browser holds only the consent id; a logged-in user gets their choice on another device, and on a shared device not another user's |
 
 The consent cookie holds a choice the visitor asked to be remembered, so it is strictly necessary
-storage and needs no consent itself. Set a fixed `ValidationKey` on `TSecurityManager`: the cookie
-signature, the log's hashes and the cache keys use it.
+storage and needs no consent itself.
+
+Set a fixed `ValidationKey` on `TSecurityManager`, the same on every server: without one, each
+server generates its own and keeps it in its runtime state. `TPrivacyHash` derives its key from
+it for the hashes of IP addresses, user names and user agents (the consent log, the database
+store, the data subject requests) and the IP cache keys; the cookie signature uses the
+`CookieValidationKey`, derived from it unless set. Rotating
+`ValidationKey` breaks the links between hashes made before and after: a user's earlier log
+entries and stored choices no longer match their name. Rotating either key makes the consent
+cookies unreadable, so visitors are asked again.
 
 ### Regions
 

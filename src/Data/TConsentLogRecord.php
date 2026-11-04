@@ -38,7 +38,7 @@ class TConsentLogRecord extends TPrivacyActiveRecord
 	/** @var string the decision, JSON */
 	public $categories;
 
-	/** @var string where the choice came from */
+	/** @var string where the choice came from, at most 16 characters (`TConsentModule::SOURCE_PATTERN`) */
 	public $source;
 
 	/** @var ?string the resolved region */

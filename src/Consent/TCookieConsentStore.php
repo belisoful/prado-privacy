@@ -22,8 +22,9 @@ use Prado\Web\THttpCookieSameSite;
  * TCookieConsentStore class.
  *
  * TCookieConsentStore keeps the visitor's choice in one cookie, `prado_consent` by default. The
- * value is the record's compact JSON form, signed with `TSecurityManager::hashData()` whether or
- * not the application validates cookies, so a forged or altered cookie reads as no choice.
+ * value is the record's compact JSON form, signed with `TSecurityManager::hashCookieData()` (the
+ * `CookieValidationKey`) whether or not the application validates cookies, so a forged or altered
+ * cookie reads as no choice.
  *
  * | Attribute | Value |
  * |---|---|
@@ -103,6 +104,14 @@ class TCookieConsentStore extends TComponent implements IConsentStore
 	}
 
 	/**
+	 * Forgets the record read this request, so the next {@see load()} reads the cookie again.
+	 */
+	public function reset(): void
+	{
+		$this->_record = null;
+	}
+
+	/**
 	 * Builds the cookie with the store's attributes.
 	 * @param string $value the cookie value
 	 * @return THttpCookie the cookie
@@ -143,7 +152,7 @@ class TCookieConsentStore extends TComponent implements IConsentStore
 		if ($cookie === null) {
 			return null;
 		}
-		$payload = $app->getSecurityManager()->validateData((string) $cookie->getValue());
+		$payload = $app->getSecurityManager()->validateCookieData((string) $cookie->getValue());
 		if ($payload === false) {
 			$this->logUnreadable();
 			return null;
@@ -159,7 +168,7 @@ class TCookieConsentStore extends TComponent implements IConsentStore
 	protected function writeCookie(string $payload, int $expires): void
 	{
 		$app = Prado::getApplication();
-		$cookie = $this->createCookie($app->getSecurityManager()->hashData($payload));
+		$cookie = $this->createCookie($app->getSecurityManager()->hashCookieData($payload));
 		$cookie->setExpire($expires);
 		$app->getResponse()->getCookies()->add($cookie);
 	}
