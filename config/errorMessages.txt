@@ -4,6 +4,7 @@ privacy_expires_invalid				= TConsentModule.Expires must be between 1 and {1} da
 privacy_category_name_invalid		= A consent category name must be lowercase letters, digits and underscores, starting with a letter, at most 32 characters; "{0}" was given.
 privacy_category_unknown			= The consent category "{0}" does not exist.
 privacy_consent_value_invalid		= The consent for category "{0}" must be "granted", "denied" or a boolean; "{1}" was given.
+privacy_consent_source_invalid		= A consent source must be a lowercase letter followed by up to 15 lowercase letters, digits, "_" or "-"; "{0}" was given.
 privacy_cookie_name_invalid			= "{0}" cannot be a cookie name.
 privacy_region_invalid				= "{0}" is neither a region group nor an ISO 3166 region code (DE, US-CA).
 privacy_db_driver_unsupported		= The database driver "{0}" is not supported. Supported drivers: {1}.

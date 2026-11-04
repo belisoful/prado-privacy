@@ -68,6 +68,13 @@ class TSessionConsentStore extends TComponent implements IConsentStore
 	}
 
 	/**
+	 * Does nothing: the store keeps nothing between reads.
+	 */
+	public function reset(): void
+	{
+	}
+
+	/**
 	 * Opens the application session: for a write always, for a read only when the request carries the session cookie.
 	 * @param bool $forWrite whether the caller writes
 	 * @return ?\Prado\Web\THttpSession the session; null for a read without a session

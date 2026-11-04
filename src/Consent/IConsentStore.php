@@ -14,9 +14,9 @@ namespace belisoful\Privacy\Consent;
  * IConsentStore interface.
  *
  * IConsentStore keeps the visitor's current choice between requests. `TConsentModule` reads it
- * once per request, writes it when the visitor chooses, and clears it on a withdrawal. A store
- * returns what it holds; the module decides whether the record's version and expiry make it
- * current.
+ * once per request, writes it when the visitor chooses, clears it on a withdrawal, and resets it
+ * when the module resets, so a store that caches its read reads again. A store returns what it
+ * holds; the module decides whether the record's version and expiry make it current.
  *
  * `TCookieConsentStore` is the default; `TSessionConsentStore` and `TDbConsentStore` are the
  * alternatives.
@@ -41,4 +41,9 @@ interface IConsentStore
 	 * Removes the stored choice.
 	 */
 	public function clear(): void;
+
+	/**
+	 * Forgets anything read this request, so the next {@see load()} reads the stored choice again.
+	 */
+	public function reset(): void;
 }

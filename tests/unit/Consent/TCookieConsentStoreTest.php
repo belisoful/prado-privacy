@@ -25,20 +25,35 @@ class TCookieConsentStoreTest extends PrivacyTestCase
 		$this->assertFalse($cookie->getSecure());
 		$this->assertSame('Lax', $cookie->getSameSite());
 		$this->assertSame(self::NOW + 86400, $cookie->getExpire());
-		$payload = $this->app->getSecurityManager()->validateData($cookie->getValue());
+		$payload = $this->app->getSecurityManager()->validateCookieData($cookie->getValue());
 		$this->assertSame($this->record()->toArray(), \json_decode($payload, true));
 		$this->assertSame('granted', $store->load()->getState('analytics'));
 	}
 
 	public function testLoadReadsAndVerifiesTheRequestCookieOnce()
 	{
-		$value = $this->app->getSecurityManager()->hashData(\json_encode($this->record()->toArray()));
+		$value = $this->app->getSecurityManager()->hashCookieData(\json_encode($this->record()->toArray()));
 		$this->request->addCookie('prado_consent', $value);
 		$store = new TCookieConsentStore();
 		$record = $store->load();
 		$this->assertSame(\str_repeat('b', 32), $record->getId());
 		$this->request->getCookies()->clear();
 		$this->assertSame($record, $store->load(), 'read once per request');
+		$store->reset();
+		$this->assertNull($store->load(), 'reset reads the cookie again');
+	}
+
+	public function testACookieSignedWithTheValidationKeyReadsAsNoChoice()
+	{
+		$this->request->addCookie('prado_consent', $this->app->getSecurityManager()->hashData(\json_encode($this->record()->toArray())));
+		$this->assertNull((new TCookieConsentStore())->load());
+	}
+
+	public function testRotatingTheCookieValidationKeyInvalidatesTheCookie()
+	{
+		$this->request->addCookie('prado_consent', $this->app->getSecurityManager()->hashCookieData(\json_encode($this->record()->toArray())));
+		$this->app->getSecurityManager()->setCookieValidationKey('rotated-cookie-key');
+		$this->assertNull((new TCookieConsentStore())->load());
 	}
 
 	public function testLoadWithoutACookieIsNull()
@@ -48,14 +63,14 @@ class TCookieConsentStoreTest extends PrivacyTestCase
 
 	public function testATamperedCookieReadsAsNoChoice()
 	{
-		$value = $this->app->getSecurityManager()->hashData(\json_encode($this->record()->toArray()));
+		$value = $this->app->getSecurityManager()->hashCookieData(\json_encode($this->record()->toArray()));
 		$this->request->addCookie('prado_consent', \str_replace('"marketing":0', '"marketing":1', $value));
 		$this->assertNull((new TCookieConsentStore())->load());
 	}
 
 	public function testASignedButMalformedCookieReadsAsNoChoice()
 	{
-		$this->request->addCookie('prado_consent', $this->app->getSecurityManager()->hashData('{"id":"nope"}'));
+		$this->request->addCookie('prado_consent', $this->app->getSecurityManager()->hashCookieData('{"id":"nope"}'));
 		$this->assertNull((new TCookieConsentStore())->load());
 	}
 

@@ -15,6 +15,8 @@ class TPrivacyHashTest extends PrivacyTestCase
 		$this->assertNotSame($ip, \hash('sha256', '203.0.113.7'));
 		$this->app->getSecurityManager()->setValidationKey('another-key');
 		$this->assertNotSame($ip, TPrivacyHash::hash('203.0.113.7', TPrivacyHash::IP));
-		$this->assertSame(\hash_hmac('sha256', "\0x", 'another-key'), TPrivacyHash::hash('x'));
+		$key = \hash_hmac('sha256', 'prado-privacy:hash', 'another-key', true);
+		$this->assertSame(\hash_hmac('sha256', "\0x", $key), TPrivacyHash::hash('x'));
+		$this->assertNotSame(\hash_hmac('sha256', "\0x", 'another-key'), TPrivacyHash::hash('x'), 'the validation key is not the hash key');
 	}
 }

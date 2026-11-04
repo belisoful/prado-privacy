@@ -14,6 +14,7 @@ use belisoful\Privacy\Consent\TConsentModule;
 use belisoful\Privacy\Consent\TConsentRecord;
 use belisoful\Privacy\Consent\TCookieConsentStore;
 use belisoful\Privacy\Consent\TDbConsentLog;
+use belisoful\Privacy\Consent\TDbConsentStore;
 use belisoful\Privacy\Consent\TGpcMode;
 use belisoful\Privacy\Consent\TSessionConsentStore;
 use belisoful\Privacy\Test\Unit\PrivacyTestCase;
@@ -223,6 +224,19 @@ class TConsentModuleTest extends PrivacyTestCase
 		$this->assertSame('JP', $module->getRegion());
 	}
 
+	public function testResetMakesTheStoreReadAgain()
+	{
+		$module = new TConsentModule();
+		$module->reset();
+		$this->assertNull($module->getRecord());
+		$this->request->addCookie('prado_consent', $this->app->getSecurityManager()->hashCookieData(\json_encode(
+			(new TConsentRecord(\str_repeat('e', 32), ['analytics' => 'granted'], '1', self::NOW, self::NOW + 100, 'banner'))->toArray()
+		)));
+		$this->assertNull($module->getRecord(), 'read once per request');
+		$module->reset();
+		$this->assertSame(\str_repeat('e', 32), $module->getRecord()->getId(), 'the cookie store reads again');
+	}
+
 	// --- choices -----------------------------------------------------------------------------
 
 	public function testAcceptAllStoresLogsAndRaises()
@@ -280,6 +294,26 @@ class TConsentModuleTest extends PrivacyTestCase
 		}
 		$this->expectException(TInvalidDataValueException::class);
 		$module->getCategoryConsent('video');
+	}
+
+	public function testTheSourceIsValidatedBeforeTheStoreSaves()
+	{
+		$module = $this->module();
+		$this->assertSame('consent-form_2', $module->setConsent(['analytics' => true], 'consent-form_2')->getSource());
+		$this->assertSame(\str_repeat('a', 16), $module->rejectAll(\str_repeat('a', 16))->getSource());
+		$stored = $module->getStoredRecord();
+		foreach (['', 'Banner', '2fa', 'a b', \str_repeat('a', 17)] as $source) {
+			foreach ([fn () => $module->setConsent(['analytics' => true], $source), fn () => $module->acceptAll($source), fn () => $module->rejectAll($source)] as $call) {
+				try {
+					$call();
+					$this->fail('refused: ' . $source);
+				} catch (TInvalidDataValueException $e) {
+					$this->assertSame('privacy_consent_source_invalid', $e->getErrorCode());
+				}
+			}
+		}
+		$module->reset();
+		$this->assertSame($stored->toArray(), $module->getStoredRecord()->toArray(), 'nothing was saved');
 	}
 
 	public function testALoggedInUsersChoiceIsLoggedWithTheirHashAndTheUserAgent()
@@ -342,9 +376,23 @@ class TConsentModuleTest extends PrivacyTestCase
 		$module = $this->module();
 		$module->acceptAll();
 		$module->addCategory(new TConsentCategory('video'));
-		$this->assertTrue($module->getIsDecided());
+		$module->addCategory(new TConsentCategory('security', 'Security', '', true));
+		$this->assertFalse($module->getIsDecided(), 'asked again for the new category');
 		$this->assertSame('undecided', $module->getCategoryConsent('video'));
 		$this->assertSame('granted', $module->getCategoryConsent('analytics'));
+		$this->assertSame('granted', $module->getCategoryConsent('security'));
+		$module->rejectAll();
+		$this->assertTrue($module->getIsDecided());
+		$this->assertSame('denied', $module->getRecord()->getState('video'));
+		$this->assertSame('granted', $module->getRecord()->getState('security'));
+		$module->addCategory(new TConsentCategory('chat'));
+		$module->acceptAll();
+		$this->assertTrue($module->getIsDecided());
+		$this->assertSame('granted', $module->getCategoryConsent('chat'));
+		$module->addCategory(new TConsentCategory('maps'));
+		$this->region($module, 'US-CA');
+		$this->assertTrue($module->getIsDecided(), 'outside opt-in nothing is asked');
+		$this->assertSame('granted', $module->getCategoryConsent('maps'));
 	}
 
 	public function testWithdrawClearsLogsAndAsksAgain()
@@ -438,6 +486,28 @@ class TConsentModuleTest extends PrivacyTestCase
 		$this->assertSame('granted', $module->getCategoryConsent('analytics'));
 	}
 
+	public function testDyConsentOutputIsKeptValid()
+	{
+		$module = $this->module();
+		$this->region($module, 'US-NY');
+		$module->attachBehavior('policy', new class () extends \Prado\Util\TBehavior {
+			public function dyConsent($consent, $chain)
+			{
+				return $chain->dyConsent(['necessary' => 'denied', 'analytics' => 'denied', 'marketing' => 'maybe', 'functional' => true, 'video' => 'granted']);
+			}
+		});
+		$this->assertSame(['necessary' => 'granted', 'analytics' => 'denied', 'marketing' => 'granted', 'functional' => 'granted', 'personalization' => 'granted'], $module->getConsent());
+		$module = $this->module();
+		$this->region($module, 'US-NY');
+		$module->attachBehavior('broken', new class () extends \Prado\Util\TBehavior {
+			public function dyConsent($consent, $chain)
+			{
+				return 'granted';
+			}
+		});
+		$this->assertSame(\array_fill_keys(\array_keys($module->getCategories()), 'granted'), $module->getConsent());
+	}
+
 	// --- Global Privacy Control --------------------------------------------------------------
 
 	public function testGpcSignal()
@@ -518,6 +588,13 @@ class TConsentModuleTest extends PrivacyTestCase
 		$this->assertSame('consent-log', $log->getName());
 		$this->assertSame('legal_obligation', $log->getLegalBasis());
 		$this->assertNotContains('hashed user agent', $log->getDataCategories());
+		$module->setLogUserAgent(true)->setStore((new TDbConsentStore())->setDbConnection(TestDb::reset()));
+		[$choice, $log] = $module->getProcessingActivities();
+		$this->assertSame('consent-state', $choice->getRetentionPolicy());
+		$this->assertContains('hashed user name', $choice->getDataCategories());
+		$this->assertContains('hashed user agent', $log->getDataCategories());
+		$module->setRegionResolver(new \belisoful\Privacy\Consent\Region\TIpRegionResolver());
+		$this->assertSame('region-resolution', $module->getProcessingActivities()[2]->getName(), 'the resolver declares its own');
 	}
 
 	public function testRealConsentIdsAreRandomHex()

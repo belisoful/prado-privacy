@@ -25,7 +25,7 @@ class TDbConsentStoreTest extends PrivacyTestCase
 		$store->save($this->record());
 		$cookie = $this->response->lastSent();
 		$this->assertSame('prado_consent_id', $cookie->getName());
-		$this->assertSame(\str_repeat('a', 32), $this->app->getSecurityManager()->validateData($cookie->getValue()));
+		$this->assertSame(\str_repeat('a', 32), $this->app->getSecurityManager()->validateCookieData($cookie->getValue()));
 		$this->assertSame(self::NOW + 1000, $cookie->getExpire());
 		$this->assertSame(1, TestDb::count('privacy_consent_state'));
 		$store->save($this->record('', 'denied'));
@@ -36,7 +36,7 @@ class TDbConsentStoreTest extends PrivacyTestCase
 	public function testLoadFindsTheRowOfTheCookie()
 	{
 		$this->store()->save($this->record());
-		$this->request->addCookie('prado_consent_id', $this->app->getSecurityManager()->hashData(\str_repeat('a', 32)));
+		$this->request->addCookie('prado_consent_id', $this->app->getSecurityManager()->hashCookieData(\str_repeat('a', 32)));
 		$store = (new TDbConsentStore())->setDbConnection(TestDb::connection());
 		$record = $store->load();
 		$this->assertSame(['analytics' => 'granted', 'marketing' => 'denied'], $record->getCategories());
@@ -49,7 +49,7 @@ class TDbConsentStoreTest extends PrivacyTestCase
 	public function testACookieWithoutARowIsNoChoice()
 	{
 		$store = $this->store();
-		$this->request->addCookie('prado_consent_id', $this->app->getSecurityManager()->hashData(\str_repeat('9', 32)));
+		$this->request->addCookie('prado_consent_id', $this->app->getSecurityManager()->hashCookieData(\str_repeat('9', 32)));
 		$this->assertNull($store->load());
 	}
 
@@ -68,6 +68,43 @@ class TDbConsentStoreTest extends PrivacyTestCase
 		$off = (new TDbConsentStore())->setDbConnection(TestDb::connection())->setRestoreForUser('false');
 		$this->assertFalse($off->getRestoreForUser());
 		$this->assertNull($off->load());
+	}
+
+	public function testOnASharedDeviceAnotherUsersChoiceIsNotTheirs()
+	{
+		$this->login('alice');
+		$store = $this->store();
+		$store->save($this->record(\str_repeat('1', 32), 'denied', self::NOW - 50));
+		$this->request->addCookie('prado_consent_id', $this->app->getSecurityManager()->hashCookieData(\str_repeat('1', 32)));
+		$this->login('bob');
+		$bob = (new TDbConsentStore())->setDbConnection(TestDb::connection());
+		$this->assertNull($bob->load(), 'alice\'s choice is not bob\'s');
+		$bob->save($this->record(\str_repeat('2', 32), 'granted', self::NOW));
+		$this->assertSame(2, TestDb::count('privacy_consent_state'), 'bob\'s choice takes its own row');
+		$alice = \belisoful\Privacy\TPrivacyHash::hash('alice', \belisoful\Privacy\TPrivacyHash::SUBJECT);
+		$this->assertSame([\str_repeat('1', 32)], \array_map(fn ($r) => $r->getId(), $store->findBySubject($alice)), 'alice\'s row keeps her hash');
+		$this->login('alice');
+		$device = (new TDbConsentStore())->setDbConnection(TestDb::connection());
+		$this->request->getCookies()->clear();
+		$this->request->addCookie('prado_consent_id', $this->app->getSecurityManager()->hashCookieData(\str_repeat('2', 32)));
+		$this->assertSame(\str_repeat('1', 32), $device->load()->getId(), 'back on bob\'s cookie, alice gets her own choice');
+		$this->login('carol');
+		$this->assertNull((new TDbConsentStore())->setDbConnection(TestDb::connection())->setRestoreForUser(false)->load());
+		$this->app->setUser(new \belisoful\Privacy\Test\Unit\FakeUser());
+		$this->assertSame(\str_repeat('2', 32), (new TDbConsentStore())->setDbConnection(TestDb::connection())->load()->getId(), 'a guest gets the device\'s choice');
+	}
+
+	public function testALoggedInUserAdoptsAGuestsChoice()
+	{
+		$store = $this->store();
+		$store->save($this->record());
+		$this->request->addCookie('prado_consent_id', $this->app->getSecurityManager()->hashCookieData(\str_repeat('a', 32)));
+		$this->login('alice');
+		$device = (new TDbConsentStore())->setDbConnection(TestDb::connection());
+		$this->assertSame(\str_repeat('a', 32), $device->load()->getId());
+		$device->save($this->record());
+		$alice = \belisoful\Privacy\TPrivacyHash::hash('alice', \belisoful\Privacy\TPrivacyHash::SUBJECT);
+		$this->assertCount(1, $device->findBySubject($alice));
 	}
 
 	public function testAGuestWithoutACookieHasNoChoice()
@@ -97,7 +134,7 @@ class TDbConsentStoreTest extends PrivacyTestCase
 		$store->save($this->record(\str_repeat('3', 32)));
 		$this->login('alice');
 		$device = (new TDbConsentStore())->setDbConnection(TestDb::connection());
-		$this->request->addCookie('prado_consent_id', $this->app->getSecurityManager()->hashData(\str_repeat('2', 32)));
+		$this->request->addCookie('prado_consent_id', $this->app->getSecurityManager()->hashCookieData(\str_repeat('2', 32)));
 		$device->clear();
 		$this->assertSame(1, TestDb::count('privacy_consent_state'), 'bob\'s row remains');
 		$this->request->getCookies()->clear();

@@ -27,7 +27,8 @@ use Prado\TPropertyValue;
  * `TCookieConsentStore` apply). The row also records the hash of the logged-in user's name, so
  * with `RestoreForUser` (the default) a user who logs in on another device gets the choice made
  * on the first one. A withdrawal deletes all of the logged-in user's rows, so it reaches every
- * device.
+ * device. On a shared device, another user's choice does not apply to the logged-in user, whose
+ * own choice takes its own consent id.
  *
  * The connection comes from `ConnectionID`, or the runtime sqlite database without one
  * (`TPrivacyDbConnectionTrait`). As an `IRetentionPurger`, the store removes the choices that
@@ -135,21 +136,26 @@ class TDbConsentStore extends TCookieConsentStore implements IRetentionPurger
 
 	/**
 	 * Finds the row of the cookie's consent id; without a cookie, the logged-in user's latest row when `RestoreForUser` is on.
+	 *
+	 * A row another user made (a shared device) is not the logged-in user's choice: it reads as no
+	 * cookie, so the user gets their own choice or none, and their next choice takes a new consent
+	 * id instead of re-tagging the other user's row.
 	 * @return ?TConsentRecord the stored choice
 	 */
 	protected function readCookie(): ?TConsentRecord
 	{
 		$id = $this->readCookiePayload();
+		$subject = $this->getSubjectHash();
 		$finder = TConsentStateRecord::on($this->getTableConnection(TPrivacySchema::CONSENT_STATE));
-		if ($id !== null) {
-			$row = $finder->findByPk($id);
-		} elseif ($this->getRestoreForUser() && ($subject = $this->getSubjectHash()) !== null) {
+		$row = $id === null ? null : $finder->findByPk($id);
+		if ($row instanceof TConsentStateRecord && $subject !== null && $row->subject_hash !== null && $row->subject_hash !== $subject) {
+			[$id, $row] = [null, null];
+		}
+		if ($id === null && $this->getRestoreForUser() && $subject !== null) {
 			$criteria = new TActiveRecordCriteria('subject_hash = :subject', [':subject' => $subject]);
 			$criteria->setOrdersBy(['updated_at' => 'desc']);
 			$criteria->setLimit(1);
 			$row = $finder->find($criteria);
-		} else {
-			return null;
 		}
 		return $row instanceof TConsentStateRecord ? $this->toRecord($row) : null;
 	}

@@ -62,7 +62,10 @@ use Prado\Xml\TXmlElement;
  * mode a subdivision of it could have: with `OptOutFor="US-GPC"`, `US` is `optout`.
  *
  * A choice counts only while its `Version` equals the module's and it has not expired
- * (`Expires` days, 180 by default). Outside opt-in, the denials of an older or expired choice
+ * (`Expires` days, 180 by default). A record keeps the expiry it was stored with, so lowering
+ * `Expires` shortens only choices made afterwards. In opt-in mode, a category the current choice
+ * does not cover (added without a new `Version`) is `undecided` and the visitor is asked again
+ * ({@see getIsDecided()}). Outside opt-in, the denials of an older or expired choice
  * still apply while the store holds it, and `withdraw()` stores every category denied: an
  * opt-out stands until the visitor changes it. Required categories are always `granted`.
  *
@@ -73,10 +76,13 @@ use Prado\Xml\TXmlElement;
  *
  * `setConsent()`, `acceptAll()`, `rejectAll()` and `withdraw()` store the choice, append it to the
  * consent log when `LogEnabled`, and raise `onConsentChanged` when the effective consent changed.
+ * A source is a lowercase name of at most 16 characters (`SOURCE_PATTERN`).
  *
  * The region comes from `RegionResolver`, `TScopeAllRegionResolver` by default (every visitor
  * unknown, so every visitor is asked). The dynamic event `dyResolveRegion` lets a behavior
- * override it, and `dyConsent` lets a behavior adjust the effective consent.
+ * override it, and `dyConsent` lets a behavior adjust the effective consent. The filtered consent
+ * keeps the module's categories, required ones granted, and only valid states: a category the
+ * filter drops or sets to an invalid state keeps its unfiltered state.
  *
  * The module declares its processing activities to `TProcessingRegistry`: the stored choice, the
  * consent log when enabled, and those of a resolver that declares its own (`TIpRegionResolver`).
@@ -115,6 +121,9 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 
 	/** The source of a withdrawal. */
 	public const SOURCE_WITHDRAW = 'withdraw';
+
+	/** The pattern of a source: a lowercase letter, then up to 15 lowercase letters, digits, `_` or `-`. */
+	public const SOURCE_PATTERN = '/^[a-z][a-z0-9_-]{0,15}$/';
 
 	/** The built-in categories: name => [title, description, required]. */
 	public const BUILTIN_CATEGORIES = [
@@ -271,7 +280,28 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 			}
 			$consent[$name] = $state;
 		}
-		return $this->_consent = $this->dyConsent($consent);
+		return $this->_consent = $this->filterConsent($consent);
+	}
+
+	/**
+	 * Applies `dyConsent` and keeps its result valid: the module's categories, required ones
+	 * granted, each state `granted`, `denied` or `undecided`.
+	 * @param array<string, string> $consent the consent before the filter
+	 * @return array<string, string> the filtered consent
+	 */
+	protected function filterConsent(array $consent): array
+	{
+		$filtered = $this->dyConsent($consent);
+		$valid = [TConsentState::Granted, TConsentState::Denied, TConsentState::Undecided];
+		foreach (\array_keys($consent) as $name) {
+			$value = \is_array($filtered) ? ($filtered[$name] ?? null) : null;
+			if ($this->_categories[$name]->getRequired()) {
+				$consent[$name] = TConsentState::Granted;
+			} elseif (\in_array($value, $valid, true)) {
+				$consent[$name] = $value;
+			}
+		}
+		return $consent;
 	}
 
 	/**
@@ -299,11 +329,25 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 	}
 
 	/**
-	 * @return bool whether the visitor's consent is settled: a current choice exists, or the region does not require one
+	 * In opt-in mode, the current choice must cover every category that is not required: a
+	 * category added without a new `Version` leaves the visitor undecided, so the banner asks again.
+	 * @return bool whether the visitor's consent is settled: a current choice covers every category, or the region does not require one
 	 */
 	public function getIsDecided(): bool
 	{
-		return $this->getMode() !== TConsentMode::OptIn || $this->getRecord() !== null;
+		if ($this->getMode() !== TConsentMode::OptIn) {
+			return true;
+		}
+		$record = $this->getRecord();
+		if ($record === null) {
+			return false;
+		}
+		foreach ($this->_categories as $name => $category) {
+			if (!$category->getRequired() && $record->getState($name) === null) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -321,12 +365,13 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 	 * not in effect (Global Privacy Control denies it) is carried as denied, so the new record does
 	 * not turn it into an explicit grant. Required categories are always granted.
 	 * @param array<string, mixed> $categories category => `granted`, `denied`, or a boolean
-	 * @param string $source where the choice came from: `banner`, `preferences` or `api`
-	 * @throws TInvalidDataValueException when a category does not exist or a value is not a decision
+	 * @param string $source where the choice came from: `banner`, `preferences`, `api`, or another name matching `SOURCE_PATTERN`
+	 * @throws TInvalidDataValueException when a category does not exist, a value is not a decision, or the source is not valid
 	 * @return TConsentRecord the stored record
 	 */
 	public function setConsent(array $categories, string $source = self::SOURCE_API): TConsentRecord
 	{
+		$this->ensureSource($source);
 		$choice = $this->normalizeChoice($categories);
 		$stored = $this->getStoredRecord();
 		$effective = $this->getConsent();
@@ -360,6 +405,7 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 	/**
 	 * Grants every category, except those Global Privacy Control denies when it is honored.
 	 * @param string $source where the choice came from
+	 * @throws TInvalidDataValueException when the source is not valid
 	 * @return TConsentRecord the stored record
 	 */
 	public function acceptAll(string $source = self::SOURCE_BANNER): TConsentRecord
@@ -375,6 +421,7 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 	/**
 	 * Denies every category that is not required.
 	 * @param string $source where the choice came from
+	 * @throws TInvalidDataValueException when the source is not valid
 	 * @return TConsentRecord the stored record
 	 */
 	public function rejectAll(string $source = self::SOURCE_BANNER): TConsentRecord
@@ -445,6 +492,17 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 			$this->_storedRecord = $this->getStore()->load();
 		}
 		return $this->_storedRecord;
+	}
+
+	/**
+	 * @param string $source where a choice came from
+	 * @throws TInvalidDataValueException when the source does not match `SOURCE_PATTERN`
+	 */
+	protected function ensureSource(string $source): void
+	{
+		if (!\preg_match(self::SOURCE_PATTERN, $source)) {
+			throw new TInvalidDataValueException('privacy_consent_source_invalid', $source);
+		}
 	}
 
 	/**
@@ -523,10 +581,14 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 	}
 
 	/**
-	 * Forgets what this request read and computed: the stored record, the region and the consent.
+	 * Forgets what this request read and computed: the stored record (the store reads it again),
+	 * the region and the consent.
 	 */
 	public function reset(): void
 	{
+		if ($this->_store instanceof IConsentStore) {
+			$this->_store->reset();
+		}
 		$this->_storedRecord = false;
 		$this->_region = false;
 		$this->_consent = null;
@@ -689,6 +751,7 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 	}
 
 	/**
+	 * Lowering it does not shorten choices already stored: each keeps the expiry it was stored with.
 	 * @param mixed $value days a choice lasts, 1 to 395
 	 * @throws TInvalidDataValueException when the value is outside 1 to 395
 	 * @return static the module
