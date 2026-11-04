@@ -43,10 +43,48 @@ class TPurgersTest extends PrivacyTestCase
 		$this->assertSame(1, $purger->purge(\strtotime('2021-06-01 UTC')), 'the unpaid 2021 order stays');
 	}
 
+	public function testDbPurgerByMillisecondsInBatches()
+	{
+		$connection = TestDb::connection();
+		$connection->createCommand('DROP TABLE IF EXISTS Event_Log')->execute();
+		$connection->createCommand('CREATE TABLE Event_Log ("key" INTEGER PRIMARY KEY, "order" INTEGER)')->execute();
+		for ($i = 1; $i <= 7; $i++) {
+			$connection->createCommand('INSERT INTO Event_Log VALUES (' . $i . ', ' . ($i * 1000) . ')')->execute();
+		}
+		$purger = (new TDbRetentionPurger())->setDbConnection($connection)
+			->setTable('Event_Log')->setTimeColumn('order')->setTimeFormat(' unix_ms ')->setKeyColumn('key')->setBatchSize('2');
+		$this->assertSame('unix_ms', $purger->getTimeFormat());
+		$this->assertSame('key', $purger->getKeyColumn());
+		$this->assertSame(2, $purger->getBatchSize());
+		$this->assertSame(5, $purger->purge(6), 'reserved-word columns are quoted; batches of 2, 2, 1');
+		$this->assertSame(2, TestDb::count('Event_Log'));
+		$this->assertSame(0, $purger->purge(6));
+		$this->assertSame(2, $purger->setBatchSize(1)->purge(8), 'batches of 1, 1, 0');
+		$this->assertSame(0, TestDb::count('Event_Log'));
+		$connection->createCommand('DROP TABLE Event_Log')->execute();
+	}
+
+	public function testDbPurgerRefusesAZeroPeriod()
+	{
+		$purger = (new TDbRetentionPurger())->setDbConnection($this->orders())->setTable('test_orders')->setTimeColumn('created_at');
+		$this->assertFalse($purger->getAllowZeroPeriod());
+		try {
+			$purger->purge(self::NOW);
+			$this->fail('a cutoff of now');
+		} catch (TConfigurationException $e) {
+			$this->assertSame('privacy_purger_zero_period', $e->getErrorCode());
+		}
+		$this->assertSame(3, TestDb::count('test_orders'));
+		$this->assertSame(3, $purger->setAllowZeroPeriod('true')->purge(self::NOW));
+		$this->assertTrue($purger->getAllowZeroPeriod());
+	}
+
 	public function testDbPurgerValidation()
 	{
 		$purger = new TDbRetentionPurger();
-		foreach ([fn () => $purger->setTable('orders; DROP TABLE x'), fn () => $purger->setTimeColumn('a b'), fn () => $purger->setTimeFormat('iso')] as $call) {
+		$this->assertSame(0, $purger->getBatchSize());
+		$this->assertSame('id', $purger->getKeyColumn());
+		foreach ([fn () => $purger->setTable('orders; DROP TABLE x'), fn () => $purger->setTimeColumn('a b'), fn () => $purger->setTimeFormat('iso'), fn () => $purger->setKeyColumn('1d'), fn () => $purger->setBatchSize(-1)] as $call) {
 			try {
 				$call();
 				$this->fail('refused');

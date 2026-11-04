@@ -26,7 +26,13 @@ use Prado\TPropertyValue;
  * | `ConnectionID="db"` | the connection of that module (a `TDataSourceConfig`, `TActiveRecordConfig`, or any module with `getDbConnection()`) |
  * | neither | `sqlite:<runtime>/privacy.db`; needs `pdo_sqlite` |
  *
- * With `AutoCreateTables` (the default) the component creates its tables on first use.
+ * With `AutoCreateTables` (the default) the component creates a missing table on first use; a
+ * process checks the connection's table names once and runs DDL only for a missing table. For a
+ * production MySQL or PostgreSQL database, or a database user without `CREATE`, create the tables
+ * from `config/schema/<driver>.sql` and set `AutoCreateTables="false"`.
+ *
+ * The runtime sqlite database is created with the permissions of the process umask. Restrict
+ * `privacy.db` to the web server's user in production.
  *
  * @author Brad Anderson <belisoful@icloud.com>
  * @since 0.1.0

@@ -137,19 +137,44 @@ class TProcessingRegistryTest extends PrivacyTestCase
 			->setController(' Example Ltd ')->setContact('privacy@example.test')->setDpoContact('dpo@example.test');
 		$registry->addActivity(['Name' => 'orders', 'Purpose' => 'Selling | shipping', 'LegalBasis' => 'contract', 'LegalBasisNote' => 'Art. 6(1)(b)', 'DataCategories' => 'name, address', 'RetentionPolicy' => 'orders']);
 		$registry->addActivity(['Name' => 'unknown-policy', 'RetentionPolicy' => 'nope', 'RetentionPeriod' => 'a while']);
+		$registry->addActivity(['Name' => 'unknown-bare', 'RetentionPolicy' => 'nope']);
+		$registry->addActivity(['Name' => 'both', 'LegalBasis' => 'contract', 'RetentionPolicy' => 'orders', 'RetentionPeriod' => 'ten years']);
+		$registry->addActivity(['Name' => 'period', 'RetentionPeriod' => 'a day']);
 		$registry->addActivity(['Name' => 'bare']);
 		$this->assertSame('Example Ltd', $registry->getController());
 		$this->assertSame('privacy@example.test', $registry->getContact());
 		$this->assertSame('dpo@example.test', $registry->getDpoContact());
+		$this->assertSame('', $registry->getJointControllers());
+		$this->assertSame('', $registry->getRepresentative());
+		$registry->setJointControllers(' Partner GmbH, privacy@partner.test ')->setRepresentative('EU Rep BV, rep@example.test');
+		$this->assertSame('Partner GmbH, privacy@partner.test', $registry->getJointControllers());
+		$this->assertSame('EU Rep BV, rep@example.test', $registry->getRepresentative());
 		$record = $registry->toArray();
 		$this->assertSame('2026-09-29T12:00:00Z', $record['generated']);
 		$this->assertSame('P10Y tax law', $record['activities']['orders']['Retention']);
-		$this->assertSame('a while', $record['activities']['unknown-policy']['Retention']);
-		$this->assertSame('Example Ltd', \json_decode($registry->toJson(), true)['controller']);
+		$this->assertSame('a while WARNING: no purge policy "nope"', $record['activities']['unknown-policy']['Retention']);
+		$this->assertSame('WARNING: no purge policy "nope"', $record['activities']['unknown-bare']['Retention']);
+		$this->assertSame('ten years (purge policy "orders": P10Y tax law)', $record['activities']['both']['Retention']);
+		$this->assertSame('a day', $record['activities']['period']['Retention']);
+		$this->assertSame('', $record['activities']['bare']['Retention']);
+		$this->assertSame('EU Rep BV, rep@example.test', $record['representative']);
+		$json = \json_decode($registry->toJson(), true);
+		$this->assertSame('Example Ltd', $json['controller']);
+		$this->assertSame('Partner GmbH, privacy@partner.test', $json['jointControllers']);
 		$markdown = $registry->toMarkdown();
 		$this->assertStringContainsString('- Controller: Example Ltd', $markdown);
+		$this->assertStringContainsString('- Joint controllers (Art. 26): Partner GmbH, privacy@partner.test', $markdown);
+		$this->assertStringContainsString('- Representative (Art. 27): EU Rep BV, rep@example.test', $markdown);
+		$this->assertStringContainsString('| unknown-policy | - | - | - | - | - | - | a while WARNING: no purge policy "nope" | - |', $markdown);
 		$this->assertStringContainsString('| orders | Selling \| shipping | contract (Art. 6(1)(b)): Art. 6(1)(b) | - | name, address | - | - | P10Y tax law | - |', $markdown);
 		$this->assertStringContainsString('| bare | - | - | - | - | - | - | - | - |', $markdown);
+	}
+
+	public function testAPolicyWithoutARetentionModule()
+	{
+		$registry = (new TProcessingRegistry())->setAutoDiscover(false)
+			->addActivity(['Name' => 'orders', 'RetentionPolicy' => 'orders', 'RetentionPeriod' => 'ten years']);
+		$this->assertSame('ten years WARNING: no purge policy "orders"', $registry->toArray()['activities']['orders']['Retention']);
 	}
 
 	public function testShellRegistration()

@@ -21,8 +21,15 @@ use Prado\TPropertyValue;
  *
  * TRetentionPolicy says how long one kind of data is kept (GDPR Art. 5(1)(e), storage limitation)
  * and which `IRetentionPurger` removes it: `Name` (the kind of data, referenced by records of
- * processing), `Period` (an ISO 8601 duration: `P30D`, `P6M`, `P3Y`, `PT12H`; `P0D` purges
- * everything already past its own expiry), `Purger` and `Description`.
+ * processing), `Period` (an ISO 8601 duration: `P30D`, `P6M`, `P3Y`, `PT12H`), `Purger` and
+ * `Description`. The purger removes the data older than now minus `Period`.
+ *
+ * `P0D` makes the cutoff the current time:
+ *
+ * | Purger keyed by | `P0D` removes |
+ * |---|---|
+ * | a creation time (`TDbRetentionPurger` on `created_at`, the logs) | every row; `TDbRetentionPurger` refuses it unless `AllowZeroPeriod` |
+ * | an expiry time (`TDbConsentStore` on `expires_at`) | the rows already expired |
  *
  * ```xml
  * <policy Name="orders" Period="P10Y" Description="Invoices: commercial and tax law">

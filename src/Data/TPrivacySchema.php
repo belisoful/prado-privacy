@@ -17,8 +17,11 @@ use Prado\Exceptions\TConfigurationException;
  * TPrivacySchema class.
  *
  * TPrivacySchema holds the DDL of the package's tables for sqlite, MySQL (and MariaDB) and
- * PostgreSQL, and creates a table on first use. `config/schema/<driver>.sql` holds the same
- * statements for a database administrator who creates the tables by hand.
+ * PostgreSQL, and creates a missing table on first use ({@see ensureTable()}).
+ * `config/schema/<driver>.sql` holds the same statements for a database administrator who creates
+ * the tables by hand. On MySQL a DDL statement commits the open transaction, so a production
+ * MySQL or PostgreSQL database, and a database user without `CREATE`, has the tables created from
+ * the script and sets `AutoCreateTables="false"` on the components.
  *
  * | Table | Written by |
  * |---|---|
@@ -52,8 +55,8 @@ class TPrivacySchema
 		'pgsql' => 'BIGSERIAL PRIMARY KEY',
 	];
 
-	/** @var array<string, true> the tables created this process, keyed by connection id and table */
-	private static array $_created = [];
+	/** @var ?\WeakMap<TDbConnection, array<bool>> table name => true, the tables known to exist per connection */
+	private static ?\WeakMap $_tables = null;
 
 	/**
 	 * @return string[] the tables the schema defines
@@ -137,22 +140,30 @@ class TPrivacySchema
 	}
 
 	/**
-	 * Creates a table on a connection unless this process already did.
+	 * Creates a table on a connection when it is missing. The first call for a connection reads
+	 * its table names (`findTableNames()` of the connection's metadata); the DDL runs only for a
+	 * table not among them. The result is kept per connection for the life of the connection.
 	 * @param TDbConnection $connection the connection, made active
 	 * @param string $table the table
 	 * @throws TConfigurationException when the connection's driver or the table is unknown
 	 */
 	public static function ensureTable(TDbConnection $connection, string $table): void
 	{
-		$key = \spl_object_id($connection) . ':' . $table;
-		if (isset(self::$_created[$key])) {
+		self::$_tables ??= new \WeakMap();
+		$known = self::$_tables[$connection] ?? null;
+		if (isset($known[$table])) {
 			return;
 		}
 		$connection->setActive(true);
-		foreach (self::getCreateStatements($table, (string) $connection->getDriverName()) as $sql) {
-			$connection->createCommand($sql)->execute();
+		$statements = self::getCreateStatements($table, (string) $connection->getDriverName());
+		$known ??= \array_fill_keys($connection->getDbMetaData()->findTableNames(), true);
+		if (!isset($known[$table])) {
+			foreach ($statements as $sql) {
+				$connection->createCommand($sql)->execute();
+			}
+			$known[$table] = true;
 		}
-		self::$_created[$key] = true;
+		self::$_tables[$connection] = $known;
 	}
 
 	/**

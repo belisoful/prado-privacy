@@ -14,7 +14,11 @@ use belisoful\Privacy\Consent\TConsentModule;
 use belisoful\Privacy\Consent\TDbConsentStore;
 use belisoful\Privacy\Rights\TPrivacyModule;
 use belisoful\Privacy\Rights\TPrivacyShellAction;
+use Prado\Exceptions\TCancelledException;
 use Prado\Exceptions\TInvalidDataValueException;
+use Prado\Exceptions\TInvalidOperationException;
+use Prado\IO\Async\TAsync;
+use Prado\IO\Async\TCancellationToken;
 use Prado\Prado;
 use Prado\TEventParameter;
 use Prado\TModule;
@@ -51,9 +55,24 @@ use Prado\Xml\TXmlElement;
  * | `privacy-requests` | the request log of the first `TPrivacyModule` | `RequestLogPeriod` (`P3Y`) |
  *
  * Three years matches the limitation period for claims in many EU member states; set the periods
- * the site's counsel advises. A policy that fails is logged and reported as -1; the others still
- * run. `onPurged` carries the counts. The module advertises its task to the cron shell through
- * `fxGetCronTaskInfos`.
+ * the site's counsel advises.
+ *
+ * {@see purge()} runs every policy. A policy that fails is logged and counted as -1, and the
+ * others still run. `onPurged` carries the counts. When a policy failed, `purge()` then throws, so
+ * `TCronModule` records the task as failed. {@see purgePolicies()} returns the counts without
+ * throwing.
+ *
+ * `Task="retention->purge"` runs without a deadline. {@see TRetentionCronTask} passes the cron
+ * run's cancellation token, so `TaskTimeout` (or the job's `Timeout`) stops the purge between
+ * policies:
+ *
+ * ```xml
+ * <module id="cron" class="Prado\Util\Cron\TCronModule" TaskTimeout="600">
+ *   <job Name="privacy-retention" Schedule="17 3 * * *" Task="belisoful\Privacy\Retention\TRetentionCronTask" ModuleId="retention" />
+ * </module>
+ * ```
+ *
+ * The module advertises {@see TRetentionCronTask} to the cron shell through `fxGetCronTaskInfos`.
  *
  * @author Brad Anderson <belisoful@icloud.com>
  * @since 0.1.0
@@ -70,6 +89,9 @@ class TRetentionModule extends TModule
 
 	/** The name of the request log policy. */
 	public const PRIVACY_REQUESTS = 'privacy-requests';
+
+	/** The pause before each policy of a purge with a token, in seconds. */
+	public const YIELD_SECONDS = 0.000001;
 
 	/** @var array<string, TRetentionPolicy> the configured policies by name */
 	private array $_policies = [];
@@ -173,17 +195,45 @@ class TRetentionModule extends TModule
 	}
 
 	/**
-	 * Purges every policy's data; the cron task.
+	 * Purges every policy's data, and throws when a policy failed.
+	 * @param ?TCancellationToken $token a token checked before each policy; null for no deadline
+	 * @throws TCancelledException when the token is cancelled; the remaining policies do not run
+	 * @throws TInvalidOperationException when a policy failed, after every policy ran and `onPurged` was raised
+	 * @return array<string, int> policy => items removed
+	 */
+	public function purge(?TCancellationToken $token = null): array
+	{
+		$counts = $this->purgePolicies($token);
+		$failed = \array_keys($counts, -1, true);
+		if ($failed !== []) {
+			throw new TInvalidOperationException('privacy_retention_purge_failed', \implode(', ', $failed));
+		}
+		return $counts;
+	}
+
+	/**
+	 * Purges every policy's data and raises `onPurged` with the counts. A failed policy is logged
+	 * and counted as -1. With a token, the purge yields to the event loop before each policy, so
+	 * the token's deadline and other fibers can run, then checks the token.
+	 * @param ?TCancellationToken $token a token checked before each policy; null for no deadline
+	 * @throws TCancelledException when the token is cancelled, or a purger was cancelled
 	 * @return array<string, int> policy => items removed; -1 when the policy failed
 	 */
-	public function purge(): array
+	public function purgePolicies(?TCancellationToken $token = null): array
 	{
 		$now = $this->getClock()->time();
 		$counts = [];
 		foreach ($this->getPolicies() as $name => $policy) {
+			if ($token !== null) {
+				$this->yieldToLoop();
+				$token->throwIfCancelled();
+			}
 			try {
 				$counts[$name] = $policy->getPurger()->purge($policy->getCutoff($now));
 				Prado::log('Retention policy "' . $name . '" removed ' . $counts[$name] . ' items.', TLogger::INFO, static::class);
+			} catch (TCancelledException $e) {
+				Prado::log('Retention purge cancelled at policy "' . $name . '".', TLogger::WARNING, static::class);
+				throw $e;
 			} catch (\Throwable $e) {
 				$counts[$name] = -1;
 				Prado::log('Retention policy "' . $name . '" failed: ' . $e->getMessage(), TLogger::ERROR, static::class);
@@ -191,6 +241,14 @@ class TRetentionModule extends TModule
 		}
 		$this->onPurged(new TEventParameter($counts));
 		return $counts;
+	}
+
+	/**
+	 * Lets the event loop run its due callbacks: a token's deadline and other cron fibers.
+	 */
+	protected function yieldToLoop(): void
+	{
+		TAsync::sleep(self::YIELD_SECONDS);
 	}
 
 	/**
@@ -204,14 +262,14 @@ class TRetentionModule extends TModule
 	}
 
 	/**
-	 * Lists the purge task for the cron shell (`prado-cli cron/tasks`).
+	 * Lists the purge task, {@see TRetentionCronTask}, for the cron shell (`prado-cli cron/tasks`).
 	 * @param object $sender the object raising fxGetCronTaskInfos
 	 * @param mixed $param the parameter
 	 * @return TCronTaskInfo the purge task
 	 */
 	public function fxGetCronTaskInfos($sender, $param)
 	{
-		return new TCronTaskInfo('privacyretention', $this->getID() . '->purge', $this, Prado::localize('Privacy retention purge'), Prado::localize('Removes personal data past its retention period.'));
+		return new TCronTaskInfo('privacyretention', TRetentionCronTask::class, $this->getID(), Prado::localize('Privacy retention purge'), Prado::localize('Removes personal data past its retention period.'));
 	}
 
 	/**

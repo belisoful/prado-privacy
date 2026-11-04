@@ -195,8 +195,18 @@ Withdrawing must be as easy as consenting (Art. 7(3)): put a `TConsentLink` in e
 the visitor's cookie), time, policy version, the full decision, the source (`banner`,
 `preferences`, `api`, `withdraw`), the region, whether GPC was present, and HMAC-SHA256 hashes of
 the IP address, the user name and (with `LogUserAgent`) the user agent. Nothing identifies a
-person in clear. Tables are created on first use (`AutoCreateTables`); `config/schema/` holds the
-DDL for sqlite, MySQL and PostgreSQL.
+person in clear. `config/schema/` holds the DDL for sqlite, MySQL and PostgreSQL.
+
+With `AutoCreateTables` (the default) a component creates a missing table on first use: each
+process reads the connection's table names once and runs DDL only for a table that is missing.
+On MySQL a DDL statement commits the open transaction, and a database user without `CREATE`
+cannot run it. For a production MySQL or PostgreSQL database, create the tables from
+`config/schema/<driver>.sql` and set `AutoCreateTables="false"` on the log, the store and the
+request log.
+
+Without a `ConnectionID` the tables live in `protected/runtime/privacy.db`, which sqlite creates
+with the permissions of the process umask. Restrict the file to the web server's user in
+production.
 
 ## Data subject rights
 
@@ -265,26 +275,46 @@ is past it. `TCronModule` runs the purge:
 		<purger class="belisoful\Privacy\Retention\TMethodRetentionPurger" Method="uploads->purgeBefore" />
 	</policy>
 </module>
-<module id="cron" class="Prado\Util\Cron\TCronModule">
-	<job Name="privacy-retention" Schedule="17 3 * * *" Task="retention->purge" />
+<module id="cron" class="Prado\Util\Cron\TCronModule" TaskTimeout="600">
+	<job Name="privacy-retention" Schedule="17 3 * * *" Task="belisoful\Privacy\Retention\TRetentionCronTask" ModuleId="retention" />
 </module>
 ```
 
-A `Period` is an ISO 8601 duration (`P30D`, `P6M`, `P3Y`, `PT12H`). Purgers implement
+`TRetentionCronTask` passes the cron run's cancellation token to the purge, so `TaskTimeout` (or
+the job's `Timeout`) stops it between policies; a running `DELETE` is not interrupted.
+`Task="retention->purge"` also works, without a deadline.
+
+A `Period` is an ISO 8601 duration (`P30D`, `P6M`, `P3Y`, `PT12H`). The cutoff is now minus the
+period. `P0D` makes the cutoff now: it removes every row of a table keyed by a creation time, and
+only the expired rows of one keyed by an expiry time (`TDbConsentStore`). Purgers implement
 `IRetentionPurger::purge(int $before): int`:
 
 | Purger | Removes |
 |---|---|
-| `TDbRetentionPurger` | rows of `Table` whose `TimeColumn` (`unix` seconds or UTC `datetime`) is before the cutoff, and that match `Condition` |
+| `TDbRetentionPurger` | rows of `Table` whose `TimeColumn` is before the cutoff, and that match `Condition` |
 | `TMethodRetentionPurger` | whatever `moduleId->method($before)` removes |
-| the consent log, the request log, `TDbConsentStore` | their own entries; the store removes expired choices |
+| the consent log | every entry of a consent id whose latest entry is before the cutoff, so a history is kept whole until the period has passed since its last change |
+| the request log, `TDbConsentStore` | their own entries; the store removes expired choices |
+
+`TDbRetentionPurger` properties:
+
+| Property | Default | |
+|---|---|---|
+| `Table`, `TimeColumn` | | validated identifiers, quoted with the connection's `quoteTableName()` and `quoteColumnName()` |
+| `TimeFormat` | `unix` | `unix` (seconds), `unix_ms` (milliseconds) or `datetime` (bound as UTC `Y-m-d H:i:s`, a space separator; the column compares in the database session's time zone, so store UTC) |
+| `Condition` | | an extra SQL condition, from the configuration only |
+| `BatchSize` | `0` | rows per `DELETE`; 0 deletes in one statement. A batch selects by `KeyColumn` and repeats until one removes fewer rows |
+| `KeyColumn` | `id` | the unique column a batch selects by |
+| `AllowZeroPeriod` | `false` | the purger refuses a cutoff at or after now (a `P0D` policy) unless this is true |
 
 The module adds policies for this package's data (`IncludeBuiltIn`): `consent-log` and
 `privacy-requests` (three years by default, the limitation period for claims in many member
 states) and `consent-state` (expired `TDbConsentStore` rows). A configured policy of the same name
-overrides one. A failing policy is logged and reported as -1 while the others run; `onPurged`
-carries the counts, and `prado-cli privacy/purge` runs it by hand. The module lists its task in
-`prado-cli cron/tasks` through `fxGetCronTaskInfos`.
+overrides one. `purge()` runs every policy, logs a failing one, and raises `onPurged` with the
+counts (-1 for a failure); then it throws when a policy failed, so `TCronModule` logs the task as
+failed. `purgePolicies()` returns the counts without throwing; `prado-cli privacy/purge` runs it
+by hand. The module lists `TRetentionCronTask` in `prado-cli cron/tasks` through
+`fxGetCronTaskInfos`.
 
 ## Records of processing
 
@@ -293,7 +323,8 @@ controller's details and every activity the application declares.
 
 ```xml
 <module id="ropa" class="belisoful\Privacy\Retention\TProcessingRegistry"
-	Controller="Example Ltd, 1 Main Street" Contact="privacy@example.com" DpoContact="dpo@example.com">
+	Controller="Example Ltd, 1 Main Street" Contact="privacy@example.com" DpoContact="dpo@example.com"
+	Representative="Example EU BV, 2 Canal Street, Amsterdam">
 	<activity Name="accounts" Purpose="Running user accounts" LegalBasis="contract"
 		SubjectCategories="customers" DataCategories="name, email address, password hash"
 		RetentionPeriod="until the account is closed" SecurityMeasures="TLS, hashed passwords" />
@@ -306,8 +337,14 @@ Activities come from `<activity>` elements, from every loaded module that implem
 `IProcessingActivityProvider` (this package's `TConsentModule`, `TPrivacyModule` and
 `TIpRegionResolver` declare theirs), and from any component's `fxGetProcessingActivities` global
 event handler. A `RetentionPolicy` is resolved against `TRetentionModule`, so the record states
-the period the purge enforces. `toArray()`, `toJson()` and `toMarkdown()` give the record;
-`prado-cli privacy/ropa` prints it (`json` for JSON).
+the period the purge enforces. An activity with both a `RetentionPeriod` and a policy shows both.
+A `RetentionPolicy` that does not resolve (no `TRetentionModule`, or no policy of that name) shows
+the period and `WARNING: no purge policy "name"`. `toArray()`, `toJson()` and `toMarkdown()` give
+the record; `prado-cli privacy/ropa` prints it (`json` for JSON).
+
+The controller's details are Art. 30(1)(a): `Controller`, `Contact`, `JointControllers` (Art. 26),
+`Representative` (Art. 27, a controller outside the Union) and `DpoContact`. A processor's records
+(Art. 30(2)) are out of scope.
 
 | `TProcessingActivity` | Art. 30(1) |
 |---|---|

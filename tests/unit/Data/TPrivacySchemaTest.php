@@ -52,4 +52,32 @@ class TPrivacySchemaTest extends TestCase
 		TPrivacySchema::ensureTable($connection, TPrivacySchema::CONSENT_STATE);
 		$this->assertFalse((bool) $connection->createCommand("SELECT COUNT(*) FROM sqlite_master WHERE name = 'privacy_consent_state'")->queryScalar(), 'the second call is a no-op');
 	}
+
+	public function testEnsureTableRunsNoDdlForAnExistingTable()
+	{
+		$connection = new class ('sqlite::memory:') extends TDbConnection {
+			public array $statements = [];
+
+			public function createCommand($sql)
+			{
+				$this->statements[] = $sql;
+				return parent::createCommand($sql);
+			}
+		};
+		$connection->setActive(true);
+		$connection->getPdoInstance()->exec('CREATE TABLE privacy_request (id INTEGER PRIMARY KEY)');
+		TPrivacySchema::ensureTable($connection, TPrivacySchema::REQUEST);
+		TPrivacySchema::ensureTable($connection, TPrivacySchema::CONSENT_LOG);
+		TPrivacySchema::ensureTable($connection, TPrivacySchema::REQUEST);
+		TPrivacySchema::ensureTable($connection, TPrivacySchema::CONSENT_LOG);
+		$ddl = \array_values(\array_filter($connection->statements, fn ($sql) => \str_starts_with($sql, 'CREATE')));
+		$this->assertSame(TPrivacySchema::getCreateStatements(TPrivacySchema::CONSENT_LOG, 'sqlite'), $ddl, 'only the missing table is created');
+		$this->assertCount(1, \array_filter($connection->statements, fn ($sql) => \str_contains($sql, 'sqlite_master')), 'the table names are read once');
+		$known = (new \ReflectionProperty(TPrivacySchema::class, '_tables'))->getValue();
+		$this->assertTrue(isset($known[$connection]));
+		$before = \count($known);
+		unset($connection);
+		\gc_collect_cycles();
+		$this->assertLessThan($before, \count($known), 'a released connection leaves the cache');
+	}
 }

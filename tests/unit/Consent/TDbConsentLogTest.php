@@ -50,12 +50,18 @@ class TDbConsentLogTest extends PrivacyTestCase
 		$this->assertSame([], $this->log->findByConsentId(\str_repeat('f', 32)));
 	}
 
-	public function testPurgeRemovesOlderEntries()
+	public function testPurgeRemovesConsentIdsByTheirLatestEntry()
 	{
 		foreach ([100, 200, 300] as $time) {
 			$this->log->record(new TConsentRecord(\str_repeat('a', 32), [], 'v', $time, $time), new TConsentLogContext());
 		}
-		$this->assertSame(2, $this->log->purge(300));
-		$this->assertSame(1, TestDb::count('privacy_consent_log'));
+		foreach ([100, 150] as $time) {
+			$this->log->record(new TConsentRecord(\str_repeat('b', 32), [], 'v', $time, $time), new TConsentLogContext());
+		}
+		$this->assertSame(2, $this->log->purge(300), 'only the id last changed before the cutoff');
+		$this->assertCount(3, $this->log->findByConsentId(\str_repeat('a', 32)), 'a history is kept whole');
+		$this->assertSame(0, $this->log->purge(300));
+		$this->assertSame(3, $this->log->purge(301));
+		$this->assertSame(0, TestDb::count('privacy_consent_log'));
 	}
 }

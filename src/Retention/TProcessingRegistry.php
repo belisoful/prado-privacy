@@ -20,8 +20,10 @@ use Prado\Xml\TXmlElement;
 /**
  * TProcessingRegistry class.
  *
- * TProcessingRegistry assembles the records of processing activities (GDPR Art. 30): the
- * controller's details and every `TProcessingActivity` the application declares.
+ * TProcessingRegistry assembles the controller's records of processing activities (GDPR Art.
+ * 30(1)): the controller's details (Art. 30(1)(a): `Controller`, `Contact`, `JointControllers`,
+ * `Representative` under Art. 27, `DpoContact`) and every `TProcessingActivity` the application
+ * declares. A processor's records (Art. 30(2)) are out of scope.
  *
  * ```xml
  * <module id="ropa" class="belisoful\Privacy\Retention\TProcessingRegistry"
@@ -40,8 +42,17 @@ use Prado\Xml\TXmlElement;
  *    returns an activity or a list of them.
  *
  * An activity's `RetentionPolicy` is resolved against the first `TRetentionModule`, so the record
- * states the period the purge enforces. {@see toArray()}, {@see toJson()} and {@see toMarkdown()}
- * give the record; `prado-cli privacy/ropa` prints it.
+ * states the period the purge enforces. The `Retention` entry of each activity reads:
+ *
+ * | Activity declares | `Retention` |
+ * |---|---|
+ * | `RetentionPeriod` only | the period |
+ * | a resolved `RetentionPolicy` only | the policy's `Period` and `Description` |
+ * | both, the policy resolved | the period, then `(purge policy "name": Period Description)` |
+ * | a `RetentionPolicy` that does not resolve | the period, then `WARNING: no purge policy "name"` |
+ *
+ * {@see toArray()}, {@see toJson()} and {@see toMarkdown()} give the record; `prado-cli
+ * privacy/ropa` prints it.
  *
  * @author Brad Anderson <belisoful@icloud.com>
  * @since 0.1.0
@@ -64,6 +75,12 @@ class TProcessingRegistry extends TModule
 
 	/** @var string the data protection officer's contact */
 	private string $_dpoContact = '';
+
+	/** @var string the joint controllers */
+	private string $_jointControllers = '';
+
+	/** @var string the representative in the Union */
+	private string $_representative = '';
 
 	/**
 	 * Reads `<activity>` elements (or the `activities` key of a PHP configuration).
@@ -127,7 +144,7 @@ class TProcessingRegistry extends TModule
 	}
 
 	/**
-	 * @return array{controller: string, contact: string, dpo: string, generated: string, activities: array} the record, each activity with its resolved retention
+	 * @return array{controller: string, contact: string, jointControllers: string, representative: string, dpo: string, generated: string, activities: array} the record, each activity with its resolved retention
 	 */
 	public function toArray(): array
 	{
@@ -138,17 +155,37 @@ class TProcessingRegistry extends TModule
 		$activities = [];
 		foreach ($this->getActivities() as $name => $activity) {
 			$entry = $activity->toArray();
-			$policy = $entry['RetentionPolicy'] === '' ? null : $retention?->getPolicy($entry['RetentionPolicy']);
-			$entry['Retention'] = $policy === null ? $entry['RetentionPeriod'] : \trim($policy->getPeriod() . ' ' . $policy->getDescription());
+			$entry['Retention'] = $this->describeRetention($entry['RetentionPeriod'], $entry['RetentionPolicy'], $retention);
 			$activities[$name] = $entry;
 		}
 		return [
 			'controller' => $this->getController(),
 			'contact' => $this->getContact(),
+			'jointControllers' => $this->getJointControllers(),
+			'representative' => $this->getRepresentative(),
 			'dpo' => $this->getDpoContact(),
 			'generated' => \gmdate('Y-m-d\TH:i:s\Z', $this->getClock()->time()),
 			'activities' => $activities,
 		];
+	}
+
+	/**
+	 * Describes an activity's retention from its period and its purge policy.
+	 * @param string $period the activity's `RetentionPeriod`
+	 * @param string $policyName the activity's `RetentionPolicy`
+	 * @param ?TRetentionModule $retention the retention module; null when there is none
+	 * @return string the retention as the record states it
+	 */
+	protected function describeRetention(string $period, string $policyName, ?TRetentionModule $retention): string
+	{
+		if ($policyName === '') {
+			return $period;
+		}
+		if (($policy = $retention?->getPolicy($policyName)) === null) {
+			return \trim($period . ' WARNING: no purge policy "' . $policyName . '"');
+		}
+		$enforced = \trim($policy->getPeriod() . ' ' . $policy->getDescription());
+		return $period === '' ? $enforced : $period . ' (purge policy "' . $policyName . '": ' . $enforced . ')';
 	}
 
 	/**
@@ -171,6 +208,8 @@ class TProcessingRegistry extends TModule
 			'',
 			'- Controller: ' . $cell($record['controller']),
 			'- Contact: ' . $cell($record['contact']),
+			'- Joint controllers (Art. 26): ' . $cell($record['jointControllers']),
+			'- Representative (Art. 27): ' . $cell($record['representative']),
 			'- Data protection officer: ' . $cell($record['dpo']),
 			'- Generated: ' . $record['generated'],
 			'',
@@ -235,6 +274,42 @@ class TProcessingRegistry extends TModule
 	public function setContact($value): static
 	{
 		$this->_contact = \trim(TPropertyValue::ensureString($value));
+		return $this;
+	}
+
+	/**
+	 * @return string the joint controllers' names and contacts (GDPR Art. 26)
+	 */
+	public function getJointControllers(): string
+	{
+		return $this->_jointControllers;
+	}
+
+	/**
+	 * @param mixed $value the joint controllers' names and contacts (GDPR Art. 26)
+	 * @return static the registry
+	 */
+	public function setJointControllers($value): static
+	{
+		$this->_jointControllers = \trim(TPropertyValue::ensureString($value));
+		return $this;
+	}
+
+	/**
+	 * @return string the controller's representative in the Union, name and contact (GDPR Art. 27)
+	 */
+	public function getRepresentative(): string
+	{
+		return $this->_representative;
+	}
+
+	/**
+	 * @param mixed $value the controller's representative in the Union, name and contact (GDPR Art. 27)
+	 * @return static the registry
+	 */
+	public function setRepresentative($value): static
+	{
+		$this->_representative = \trim(TPropertyValue::ensureString($value));
 		return $this;
 	}
 

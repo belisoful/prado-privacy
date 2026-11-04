@@ -235,7 +235,7 @@ class TPrivacyShellAction extends TShellAction
 			$this->getWriter()->writeError('No TRetentionModule is configured.');
 			return true;
 		}
-		foreach ($retention->purge() as $name => $count) {
+		foreach ($retention->purgePolicies() as $name => $count) {
 			$this->getWriter()->writeLine($name . ': ' . ($count < 0 ? 'failed (see the application log)' : $count . ' removed'));
 		}
 		return true;

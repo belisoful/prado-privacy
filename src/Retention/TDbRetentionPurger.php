@@ -11,21 +11,46 @@
 namespace belisoful\Privacy\Retention;
 
 use belisoful\Privacy\Data\TPrivacyDbConnectionTrait;
+use Prado\Data\TDbConnection;
 use Prado\Exceptions\TConfigurationException;
 use Prado\Exceptions\TInvalidDataValueException;
 use Prado\TComponent;
 use Prado\TPropertyValue;
+use Prado\Util\Clock\TApplicationClockAwareTrait;
 
 /**
  * TDbRetentionPurger class.
  *
  * TDbRetentionPurger deletes the rows of `Table` whose `TimeColumn` is before the cutoff, and that
  * match the optional `Condition` (an SQL expression from the configuration, never from a request).
- * `TimeFormat` says how the column stores time: `unix` (integer seconds, the default) or
- * `datetime` (`Y-m-d H:i:s`, UTC).
+ * `Table`, `TimeColumn` and `KeyColumn` are validated identifiers, quoted with the connection's
+ * `quoteTableName()` and `quoteColumnName()`.
+ *
+ * | `TimeFormat` | The column holds | The bound cutoff |
+ * |---|---|---|
+ * | `unix` (default) | integer seconds | `1767225600` |
+ * | `unix_ms` | integer milliseconds | `1767225600000` |
+ * | `datetime` | a UTC date and time string | `2026-01-01 00:00:00`: UTC, a space separator, no zone |
+ *
+ * A `datetime` column compares as a string (sqlite) or in the database session's time zone
+ * (MySQL `TIMESTAMP`, PostgreSQL `timestamptz`). Store UTC with a space separator, or set the
+ * session time zone to UTC; an ISO 8601 `T` separator mis-compares on sqlite.
+ *
+ * `BatchSize` 0 (the default) deletes in one statement. A positive `BatchSize` deletes at most that
+ * many rows per statement, by `KeyColumn` (default `id`, a unique column), until a statement
+ * deletes fewer; each statement holds its locks briefly. The statement is portable across sqlite,
+ * MySQL and PostgreSQL:
+ *
+ * ```sql
+ * DELETE FROM t WHERE id IN (SELECT id FROM (SELECT id FROM t WHERE created_at < ? LIMIT 1000) privacy_batch)
+ * ```
+ *
+ * A zero `Period` makes the cutoff the current time and deletes every row of a table keyed by a
+ * creation time, so the purger refuses a cutoff at or after the current time unless
+ * `AllowZeroPeriod` is true.
  *
  * ```xml
- * <purger class="belisoful\Privacy\Retention\TDbRetentionPurger" ConnectionID="db"
+ * <purger class="belisoful\Privacy\Retention\TDbRetentionPurger" ConnectionID="db" BatchSize="1000"
  *     Table="newsletter_bounces" TimeColumn="bounced_at" TimeFormat="datetime" Condition="resolved = 1" />
  * ```
  *
@@ -34,10 +59,14 @@ use Prado\TPropertyValue;
  */
 class TDbRetentionPurger extends TComponent implements IRetentionPurger
 {
+	use TApplicationClockAwareTrait;
 	use TPrivacyDbConnectionTrait;
 
 	/** The pattern of a table or column name: letters, digits and underscores, optionally schema-qualified. */
 	public const IDENTIFIER_PATTERN = '/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$/';
+
+	/** The time formats. */
+	public const TIME_FORMATS = ['unix', 'unix_ms', 'datetime'];
 
 	/** @var string the table */
 	private string $_table = '';
@@ -51,10 +80,19 @@ class TDbRetentionPurger extends TComponent implements IRetentionPurger
 	/** @var string the extra condition */
 	private string $_condition = '';
 
+	/** @var int the rows per statement; 0 for one statement */
+	private int $_batchSize = 0;
+
+	/** @var string the unique column batches select by */
+	private string $_keyColumn = 'id';
+
+	/** @var bool whether a cutoff at or after the current time is accepted */
+	private bool $_allowZeroPeriod = false;
+
 	/**
-	 * Deletes the rows before the cutoff.
+	 * Deletes the rows before the cutoff, in batches when `BatchSize` is positive.
 	 * @param int $before a Unix time
-	 * @throws TConfigurationException when `Table` or `TimeColumn` is not set
+	 * @throws TConfigurationException when `Table` or `TimeColumn` is not set, or the cutoff is not in the past and `AllowZeroPeriod` is false
 	 * @return int the rows deleted
 	 */
 	public function purge(int $before): int
@@ -62,10 +100,41 @@ class TDbRetentionPurger extends TComponent implements IRetentionPurger
 		if ($this->_table === '' || $this->_timeColumn === '') {
 			throw new TConfigurationException('privacy_purger_table_missing', static::class);
 		}
-		$sql = 'DELETE FROM ' . $this->_table . ' WHERE ' . $this->_timeColumn . ' < :before'
+		if (!$this->_allowZeroPeriod && $before >= $this->getClock()->time()) {
+			throw new TConfigurationException('privacy_purger_zero_period', $this->_table);
+		}
+		$connection = $this->getDbConnection();
+		$table = $connection->quoteTableName($this->_table);
+		$where = $connection->quoteColumnName($this->_timeColumn) . ' < :before'
 			. ($this->_condition === '' ? '' : ' AND (' . $this->_condition . ')');
-		$command = $this->getDbConnection()->createCommand($sql);
-		$command->bindValue(':before', $this->_timeFormat === 'datetime' ? \gmdate('Y-m-d H:i:s', $before) : $before);
+		if ($this->_batchSize === 0) {
+			return $this->execute($connection, 'DELETE FROM ' . $table . ' WHERE ' . $where, $before);
+		}
+		$key = $connection->quoteColumnName($this->_keyColumn);
+		$sql = 'DELETE FROM ' . $table . ' WHERE ' . $key . ' IN (SELECT ' . $key . ' FROM (SELECT ' . $key
+			. ' FROM ' . $table . ' WHERE ' . $where . ' LIMIT ' . $this->_batchSize . ') privacy_batch)';
+		$total = 0;
+		do {
+			$total += $deleted = $this->execute($connection, $sql, $before);
+		} while ($deleted >= $this->_batchSize);
+		return $total;
+	}
+
+	/**
+	 * Runs one delete statement with the cutoff bound.
+	 * @param TDbConnection $connection the connection
+	 * @param string $sql the statement
+	 * @param int $before a Unix time
+	 * @return int the rows deleted
+	 */
+	protected function execute(TDbConnection $connection, string $sql, int $before): int
+	{
+		$command = $connection->createCommand($sql);
+		$command->bindValue(':before', match ($this->_timeFormat) {
+			'datetime' => \gmdate('Y-m-d H:i:s', $before),
+			'unix_ms' => $before * 1000,
+			default => $before,
+		});
 		return (int) $command->execute();
 	}
 
@@ -108,7 +177,7 @@ class TDbRetentionPurger extends TComponent implements IRetentionPurger
 	}
 
 	/**
-	 * @return string `unix` or `datetime`
+	 * @return string `unix`, `unix_ms` or `datetime`
 	 */
 	public function getTimeFormat(): string
 	{
@@ -116,14 +185,14 @@ class TDbRetentionPurger extends TComponent implements IRetentionPurger
 	}
 
 	/**
-	 * @param mixed $value `unix` (integer seconds) or `datetime` (`Y-m-d H:i:s`, UTC)
-	 * @throws TInvalidDataValueException when the value is neither
+	 * @param mixed $value `unix` (integer seconds), `unix_ms` (integer milliseconds) or `datetime` (`Y-m-d H:i:s`, UTC)
+	 * @throws TInvalidDataValueException when the value is none of them
 	 * @return static the purger
 	 */
 	public function setTimeFormat($value): static
 	{
 		$value = \strtolower(\trim(TPropertyValue::ensureString($value)));
-		if (!\in_array($value, ['unix', 'datetime'], true)) {
+		if (!\in_array($value, self::TIME_FORMATS, true)) {
 			throw new TInvalidDataValueException('privacy_purger_time_format_invalid', $value);
 		}
 		$this->_timeFormat = $value;
@@ -145,6 +214,66 @@ class TDbRetentionPurger extends TComponent implements IRetentionPurger
 	public function setCondition($value): static
 	{
 		$this->_condition = \trim(TPropertyValue::ensureString($value));
+		return $this;
+	}
+
+	/**
+	 * @return int the rows deleted per statement; 0 for one statement
+	 */
+	public function getBatchSize(): int
+	{
+		return $this->_batchSize;
+	}
+
+	/**
+	 * @param mixed $value the rows deleted per statement; 0 for one statement
+	 * @throws TInvalidDataValueException when the value is negative
+	 * @return static the purger
+	 */
+	public function setBatchSize($value): static
+	{
+		$value = TPropertyValue::ensureInteger($value);
+		if ($value < 0) {
+			throw new TInvalidDataValueException('privacy_purger_batch_size_invalid', $value);
+		}
+		$this->_batchSize = $value;
+		return $this;
+	}
+
+	/**
+	 * @return string the unique column a batch selects rows by
+	 */
+	public function getKeyColumn(): string
+	{
+		return $this->_keyColumn;
+	}
+
+	/**
+	 * @param mixed $value the unique column a batch selects rows by
+	 * @throws TInvalidDataValueException when the value is not a column name
+	 * @return static the purger
+	 */
+	public function setKeyColumn($value): static
+	{
+		$this->_keyColumn = self::ensureIdentifier($value);
+		return $this;
+	}
+
+	/**
+	 * @return bool whether a cutoff at or after the current time (a zero `Period`) is accepted
+	 */
+	public function getAllowZeroPeriod(): bool
+	{
+		return $this->_allowZeroPeriod;
+	}
+
+	/**
+	 * @param mixed $value whether a cutoff at or after the current time (a zero `Period`) is accepted
+	 * @return static the purger
+	 */
+	public function setAllowZeroPeriod($value): static
+	{
+		$this->_allowZeroPeriod = TPropertyValue::ensureBoolean($value);
 		return $this;
 	}
 

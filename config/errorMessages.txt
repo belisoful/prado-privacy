@@ -29,9 +29,13 @@ privacy_retention_period_invalid	= "{0}" is not an ISO 8601 duration (P30D, P6M,
 privacy_retention_period_missing	= The retention policy "{0}" has no Period.
 privacy_retention_purger_missing	= The retention policy "{0}" has no Purger.
 privacy_retention_name_missing		= A retention policy needs a Name.
+privacy_retention_purge_failed		= The retention purge failed for the policies: {0}. See the application log.
+privacy_retention_module_missing	= TRetentionCronTask found no TRetentionModule (ModuleId "{0}").
 privacy_purger_table_missing		= {0} needs a Table and a TimeColumn.
 privacy_purger_identifier_invalid	= "{0}" is not a table or column name.
-privacy_purger_time_format_invalid	= TDbRetentionPurger.TimeFormat must be "unix" or "datetime"; "{0}" was given.
+privacy_purger_time_format_invalid	= TDbRetentionPurger.TimeFormat must be "unix", "unix_ms" or "datetime"; "{0}" was given.
+privacy_purger_batch_size_invalid	= TDbRetentionPurger.BatchSize must be 0 or more; {0} was given.
+privacy_purger_zero_period			= TDbRetentionPurger for "{0}" refuses a zero Period, which removes every row; set AllowZeroPeriod="true" to allow it.
 privacy_purger_method_invalid		= "{0}" is not a method in the form moduleId->method.
 privacy_purger_method_missing		= The purge method "{0}" does not exist.
 privacy_legal_basis_invalid			= "{0}" is not a legal basis: consent, contract, legal_obligation, vital_interests, public_task or legitimate_interests.
