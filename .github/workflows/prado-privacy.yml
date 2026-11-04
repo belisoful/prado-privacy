@@ -8,6 +8,10 @@ on:
     - cron: '17 6 * * 1'
   workflow_dispatch:
 
+# The jobs only read the repository; no job writes to it or to the API.
+permissions:
+  contents: read
+
 env:
   # The PHP version of the coverage, Playwright and install jobs
   PHP_VERSION: '8.4'
@@ -29,19 +33,19 @@ jobs:
 
     steps:
       - name: Checkout extension
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: prado-privacy
 
       - name: Checkout PRADO framework (4.4 dev)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: pradosoft/prado
           ref: master
           path: prado
 
       - name: Setup PHP, with composer and extensions
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ matrix.php-versions }}
           extensions: ${{ env.PHP_EXTENSIONS }}
@@ -56,7 +60,7 @@ jobs:
         run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
 
       - name: Cache dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           # composer.lock is not committed, so the key hashes composer.json instead.
           path: ${{ steps.composer-cache.outputs.dir }}
@@ -96,23 +100,35 @@ jobs:
 
     steps:
       - name: Checkout extension
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: prado-privacy
 
       - name: Checkout PRADO framework (4.4 dev)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: pradosoft/prado
           ref: master
           path: prado
 
       - name: Setup PHP with Xdebug
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ env.PHP_VERSION }}
           extensions: ${{ env.PHP_EXTENSIONS }}
           coverage: xdebug
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          # composer.lock is not committed, so the key hashes composer.json instead.
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php${{ env.PHP_VERSION }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-php${{ env.PHP_VERSION }}-composer-
 
       - name: Register the sibling PRADO 4.4 checkout as a Composer path repository
         run: composer config repositories.prado '{"type":"path","url":"../prado","options":{"symlink":true,"versions":{"pradosoft/prado":"4.4.0"}}}'
@@ -127,7 +143,7 @@ jobs:
         run: php tests/test_tools/coverage-branches.php build/coverage/paths.php
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: coverage-report
@@ -154,33 +170,47 @@ jobs:
 
     steps:
       - name: Checkout extension
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: prado-privacy
 
       - name: Checkout PRADO framework (4.4 dev)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: pradosoft/prado
           ref: master
           path: prado
 
       - name: Setup PHP, with composer and extensions
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ env.PHP_VERSION }}
           extensions: ${{ env.PHP_EXTENSIONS }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: prado-privacy/.nvmrc
+          cache: npm
+          cache-dependency-path: prado-privacy/package-lock.json
 
       - name: Install npm dependencies
-        run: npm install
+        run: npm ci
 
       - name: Install Playwright browser (${{ matrix.browser_name }})
         run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          # composer.lock is not committed, so the key hashes composer.json instead.
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php${{ env.PHP_VERSION }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-php${{ env.PHP_VERSION }}-composer-
 
       - name: Register the sibling PRADO 4.4 checkout as a Composer path repository
         run: composer config repositories.prado '{"type":"path","url":"../prado","options":{"symlink":true,"versions":{"pradosoft/prado":"4.4.0"}}}'
@@ -192,7 +222,7 @@ jobs:
         run: npx playwright test --project=${{ matrix.browser }}
 
       - name: Upload Playwright report (${{ matrix.browser_name }})
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: playwright-report-${{ matrix.browser }}
@@ -205,24 +235,36 @@ jobs:
 
     steps:
       - name: Checkout extension
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           path: prado-privacy
 
       - name: Checkout PRADO framework (4.4 dev)
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: pradosoft/prado
           ref: master
           path: prado.master
 
       - name: Setup PHP, with composer and extensions
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ env.PHP_VERSION }}
           extensions: ${{ env.PHP_EXTENSIONS }}
 
+      - name: Get composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config --global cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          # composer.lock is not committed, so the key hashes composer.json instead.
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-php${{ env.PHP_VERSION }}-composer-${{ hashFiles('**/composer.json') }}
+          restore-keys: ${{ runner.os }}-php${{ env.PHP_VERSION }}-composer-
+
       # Builds a throwaway consumer project that requires the extension through Composer, then
       # asserts that extra.prado's error-messages, class-map, and bootstrap all take effect.
       - name: Verify the Composer extension wiring
-        run: bash prado-privacy/tests/integration/run-install-test.sh
+        run: bash prado-privacy/tests/integration/run-install-test.sh "$GITHUB_WORKSPACE/prado.master"

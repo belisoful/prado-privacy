@@ -325,6 +325,64 @@ class PackageStandardTest extends PHPUnit\Framework\TestCase
 		}
 	}
 
+	public function testEveryDeclaredTypeCarriesASinceVersion()
+	{
+		$first = '0.1.0';
+		foreach ($this->declaredTypes() as $path => $type) {
+			$code = (string) file_get_contents($path);
+			$declaration = '/\/\*\*((?:(?!\*\/).)*)\*\/\s*(?:#\[[^\n]*\]\s*)*(?:abstract\s+|final\s+|readonly\s+)*'
+				. $type['kind'] . '\s+' . $type['name'] . '\b/s';
+			$this->assertMatchesRegularExpression($declaration, $code, "{$type['kind']} {$type['name']} has a docblock");
+			preg_match($declaration, $code, $docblock);
+			$this->assertMatchesRegularExpression(
+				'/@since\s+\d+\.\d+\.\d+\b/',
+				$docblock[1],
+				"the docblock of {$type['kind']} {$type['name']} carries @since with a version"
+			);
+			preg_match('/@since\s+(\d+\.\d+\.\d+)\b/', $docblock[1], $since);
+			$this->assertTrue(
+				version_compare($since[1], $first, '>='),
+				"{$type['name']} is @since {$since[1]}, not before the first release {$first}"
+			);
+		}
+	}
+
+	public function testErrorMessagesFormatAsIcuPatterns()
+	{
+		if (!extension_loaded('intl')) {
+			$this->markTestSkipped('the intl extension is not loaded');
+		}
+		foreach ($this->errorMessages() as $code => $message) {
+			// A plain {n} gets a marker that must appear in the result; a typed argument gets a
+			// value its type accepts.
+			preg_match_all('/\{\s*(\d+)\s*(?:,\s*(\w+))?/', $message, $placeholders, \PREG_SET_ORDER);
+			$args = [];
+			$markers = [];
+			foreach ($placeholders as $placeholder) {
+				$index = (int) $placeholder[1];
+				$kind = $placeholder[2] ?? '';
+				if ($kind === '') {
+					$args[$index] = $markers[$index] = "<arg{$index}>";
+				} elseif ($kind === 'select') {
+					$args[$index] = 'other';
+				} else {
+					$args[$index] = 2;
+				}
+			}
+			$max = $args === [] ? -1 : max(array_keys($args));
+			for ($i = 0; $i <= $max; $i++) {
+				$args[$i] ??= "<arg{$i}>";
+			}
+			ksort($args);
+			$formatted = \MessageFormatter::formatMessage('en', $message, $args);
+			$this->assertIsString($formatted, "the message {$code} is a valid ICU MessageFormat pattern");
+			foreach ($markers as $index => $marker) {
+				$this->assertStringContainsString($marker, $formatted, "the message {$code} substitutes {{$index}}");
+			}
+			$this->assertDoesNotMatchRegularExpression('/\{\s*\d+/', $formatted, "the message {$code} leaves no placeholder unformatted");
+		}
+	}
+
 	public function testEverySourceFileCompiles()
 	{
 		foreach ($this->sourceFiles() as $path => $relative) {

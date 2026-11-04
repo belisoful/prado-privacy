@@ -43,7 +43,6 @@ tests/unit/app/runtime/*
 /node_modules
 /test-results/
 /playwright-report/
-package-lock.json
 bun.lock
 bun.lockb
 tests/playwright/*/assets/*

@@ -5,7 +5,9 @@
 #
 #     tests/integration/run-install-test.sh [prado-path] [work-dir]
 #
-# Defaults: the framework at ../prado.master, a work directory under the system temp dir.
+# The framework is [prado-path], else $PRADO_DIR, else prado.master beside the main checkout (the
+# parent of the git common directory, so a worktree finds the same sibling). The work directory
+# defaults to one under the system temp dir. Through Composer: composer integration -- <path>.
 #
 # A work directory the script created itself is removed when the run passes. A failing run keeps
 # it so the half-built consumer can be inspected, and KEEP_WORK_DIR=1 keeps it after a passing
@@ -13,7 +15,25 @@
 set -euo pipefail
 
 EXTENSION_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PRADO_DIR="$(cd "${1:-$EXTENSION_DIR/../prado.master}" && pwd)"
+if [ -n "${1:-}" ]; then
+	FRAMEWORK_DIR="$1"
+elif [ -n "${PRADO_DIR:-}" ]; then
+	FRAMEWORK_DIR="$PRADO_DIR"
+else
+	COMMON_DIR="$(git -C "$EXTENSION_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+	if [ -n "$COMMON_DIR" ]; then
+		FRAMEWORK_DIR="$(dirname "$(dirname "$COMMON_DIR")")/prado.master"
+	else
+		FRAMEWORK_DIR="$(dirname "$EXTENSION_DIR")/prado.master"
+	fi
+fi
+if [ ! -d "$FRAMEWORK_DIR" ]; then
+	echo "PRADO framework checkout not found at: $FRAMEWORK_DIR" >&2
+	echo "Pass its path as the first argument or set PRADO_DIR, e.g." >&2
+	echo "    PRADO_DIR=/path/to/prado composer integration" >&2
+	exit 2
+fi
+FRAMEWORK_DIR="$(cd "$FRAMEWORK_DIR" && pwd)"
 PACKAGE="$(php -r 'echo json_decode(file_get_contents($argv[1]), true)["name"];' "$EXTENSION_DIR/composer.json")"
 
 if [ -n "${2:-}" ]; then
@@ -40,7 +60,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "extension: $EXTENSION_DIR ($PACKAGE)"
-echo "framework: $PRADO_DIR"
+echo "framework: $FRAMEWORK_DIR"
 echo "consumer:  $WORK_DIR"
 
 mkdir -p "$WORK_DIR/protected/runtime"
@@ -51,11 +71,11 @@ cat > "$WORK_DIR/composer.json" <<JSON
     "description": "Throwaway consumer project for the Composer extension integration test.",
     "repositories": [
         { "type": "composer", "url": "https://asset-packagist.org" },
-        { "type": "path", "url": "$PRADO_DIR", "options": { "versions": { "pradosoft/prado": "4.4.x-dev" } } },
-        { "type": "path", "url": "$EXTENSION_DIR", "options": { "versions": { "$PACKAGE": "1.0.2" } } }
+        { "type": "path", "url": "$FRAMEWORK_DIR", "options": { "versions": { "pradosoft/prado": "4.4.x-dev" } } },
+        { "type": "path", "url": "$EXTENSION_DIR", "options": { "versions": { "$PACKAGE": "0.1.0" } } }
     ],
     "require": {
-        "$PACKAGE": "1.0.2"
+        "$PACKAGE": "0.1.0"
     },
     "minimum-stability": "dev",
     "prefer-stable": true
@@ -64,7 +84,7 @@ JSON
 
 # The consumer requires ONLY the extension: pradosoft/prado is a requirement of the extension
 # itself, so Composer must pull the framework in transitively. A path repository pins the
-# framework to the LOCAL checkout under test ($PRADO_DIR) rather than resolving it from
+# framework to the LOCAL checkout under test ($FRAMEWORK_DIR) rather than resolving it from
 # Packagist, so the install runs against the framework the developer is working on -- the
 # repositories block is read from this root project alone, which is also why asset-packagist is
 # listed here (PRADO depends on bower-asset/*).

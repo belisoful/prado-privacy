@@ -11,7 +11,7 @@ of the package can be proposed to `pradosoft/prado`.
 > **Status: in development, feature-complete for the first release.** Consent management, data
 > subject rights, retention, records of processing, and the Google Analytics binding (in
 > belisoful/ganalytics). The design is recorded in
-> [agents/working/DESIGN_2026-09-29.md](agents/working/DESIGN_2026-09-29.md).
+> [agents/working/DESIGN_2026-09-29.md](https://github.com/belisoful/prado-privacy/blob/main/agents/working/DESIGN_2026-09-29.md).
 
 This package supplies the mechanism. The site owner remains responsible for the policy text, the
 categories a site uses, the legal basis of each processing activity, and the advice of counsel.
@@ -402,14 +402,16 @@ composer install
 composer fulltest                          # php -l, php-cs-fixer, PHPStan (level 3), PHPUnit
 composer coverage-branches                 # every unexecuted branch under src/ (Xdebug)
 composer integration                       # install into a throwaway consumer, check extra.prado
-npm install && npx playwright install chromium
+                                           # (PRADO from $PRADO_DIR or ../prado.master)
+npm ci && npx playwright install chromium
 npx playwright test --project=chromium     # the controls in a real browser
 ```
 
 CI (`.github/workflows/prado-privacy.yml`) runs lint, php-cs-fixer, PHPStan and PHPUnit on PHP
 8.2 through 8.5 against PRADO's `master` branch, measures coverage (every line and branch of
 `src/`), runs the Playwright specs in Chromium, Firefox and WebKit, and verifies the Composer
-install. See [AGENTS.md](AGENTS.md) for the conventions.
+install. A weekly scheduled run catches changes on PRADO `master`. See [AGENTS.md](AGENTS.md) for
+the conventions.
 
 ## License
 

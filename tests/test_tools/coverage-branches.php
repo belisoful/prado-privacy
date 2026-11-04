@@ -10,7 +10,7 @@
  * report that file only. Over the whole suite Xdebug's path coverage takes very long; over one
  * class and its test class it takes seconds and yields the same branch list CI reports.
  *
- *     composer coverage-branches -- --filter GAnalyticsModuleTest --coverage-filter src/GAnalyticsModule.php
+ *     composer coverage-branches -- --filter TConsentModuleTest --coverage-filter src/Consent/TConsentModule.php
  *
  * Xdebug enumerates every acyclic path through a function, so a loop or a chain of conditions
  * yields far more paths than tests can walk; the branch list is the actionable one, and 100% of

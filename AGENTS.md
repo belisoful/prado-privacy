@@ -17,7 +17,7 @@
 | `composer coverage-html` | HTML coverage report in `build/coverage` |
 | `composer coverage-branches` | Every unexecuted branch under `src/`; narrow with `-- --filter <Test> --coverage-filter src/<Path>/<Class>.php` |
 | `npx playwright test --project=chromium` | The controls end to end (`PW_CHROMIUM=<binary>` for another Chromium) |
-| `composer integration` | The Composer install test (needs a PRADO checkout, default `../prado.master`) |
+| `composer integration` | The Composer install test (needs a PRADO checkout: `-- <path>`, `$PRADO_DIR`, or `../prado.master` beside the main checkout) |
 | `composer fulltest` | The full check, in order |
 
 Run one test or file with
@@ -192,6 +192,19 @@ English, present tense: clear, thorough, brief, timeless.
   GPC from `Sec-GPC`, set per `test.use({ extraHTTPHeaders })`. `#consent-state` shows the module's
   consent as JSON; `consentAfterReload()` reads it from a fresh GET. A spec that navigates after a
   callback waits for the callback's response first. Specs never depend on a third-party host.
+
+## CI
+
+- `.github/workflows/prado-privacy.yml` runs the unit matrix (PHP 8.2 to 8.5), coverage,
+  Playwright in three browsers and the install test, each against a checkout of PRADO `master`.
+  The workflow token is read-only (`permissions: contents: read`).
+- Every action is pinned to a commit SHA with a `# vX.Y.Z` comment; Dependabot
+  (`.github/dependabot.yml`) proposes updates weekly for actions, npm and Composer. CI installs
+  npm packages with `npm ci` from the committed `package-lock.json`.
+- The weekly `schedule` run is the only guard against a change on PRADO `master` breaking this
+  package when nothing here changed. GitHub disables scheduled workflows after 60 days without
+  repository activity; re-enable it under Actions → "PRADO Privacy Extension" → "Enable
+  workflow" (or `gh workflow enable prado-privacy.yml`).
 
 ## Safeguards -- ANTI-PATTERNS
 

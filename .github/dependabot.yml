@@ -1,0 +1,18 @@
+# Weekly update proposals for the pinned workflow actions, the Playwright toolchain and the
+# Composer requirements.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: composer
+    directory: /
+    schedule:
+      interval: weekly
