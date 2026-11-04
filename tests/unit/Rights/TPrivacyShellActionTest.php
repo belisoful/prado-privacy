@@ -8,6 +8,7 @@ use belisoful\Privacy\Rights\TPrivacyModule;
 use belisoful\Privacy\Rights\TPrivacyShellAction;
 use belisoful\Privacy\Test\Unit\PrivacyTestCase;
 use belisoful\Privacy\Test\Unit\TestDb;
+use Prado\Exceptions\TInvalidDataValueException;
 use Prado\IO\TTextWriter;
 use Prado\Shell\TShellAction;
 use Prado\Shell\TShellWriter;
@@ -42,13 +43,41 @@ class TPrivacyShellActionTest extends PrivacyTestCase
 		$action = new TPrivacyShellAction();
 		$this->assertInstanceOf(TShellAction::class, $action);
 		$this->assertSame('privacy', $action->getAction());
-		$this->assertSame(['by'], $action->options('export'));
+		$this->assertSame(['by', 'email', 'id', 'request'], $action->options('export'));
+		$this->assertSame(['by', 'email', 'id', 'request', 'yes'], $action->options('erase'));
 		$this->assertSame([], $action->options('requests'));
 		$this->assertSame('operator', $action->getBy());
 		$action->setBy(' dpo ');
 		$this->assertSame('dpo', $action->getBy());
 		$action->setBy('');
 		$this->assertSame('operator', $action->getBy());
+		$this->assertNull($action->getEmail());
+		$action->setEmail(' a@example.test ');
+		$this->assertSame('a@example.test', $action->getEmail());
+		$action->setEmail('');
+		$this->assertNull($action->getEmail());
+		$this->assertSame([], $action->getId());
+		$action->setId('customer:C-1');
+		$action->setId('phone:+1:555');
+		$this->assertSame(['customer' => 'C-1', 'phone' => '+1:555'], $action->getId());
+		$this->assertNull($action->getRequest());
+		$action->setRequest('7');
+		$this->assertSame(7, $action->getRequest());
+		$action->setRequest('');
+		$this->assertNull($action->getRequest());
+		$this->assertFalse($action->getYes());
+		$action->setYes('');
+		$this->assertTrue($action->getYes(), 'a bare --yes');
+		$action->setYes('false');
+		$this->assertFalse($action->getYes());
+		foreach (['customer', ':C-1', 'customer:', ''] as $invalid) {
+			try {
+				$action->setId($invalid);
+				$this->fail($invalid . ' is refused');
+			} catch (TInvalidDataValueException $e) {
+				$this->assertStringContainsString('kind:value', $e->getMessage());
+			}
+		}
 	}
 
 	public function testExport()
@@ -60,11 +89,29 @@ class TPrivacyShellActionTest extends PrivacyTestCase
 		$json = \json_decode($this->out->flush(), true);
 		$this->assertSame(['o1'], $json['data']['orders']);
 		$this->assertSame('dpo', $module->getRequests(new TDataSubject('alice'))[0]['requested_by']);
+		$action->setEmail('a@example.test');
+		$action->setId('customer:C-1');
+		$action->setRequest($module->openRequest('export', new TDataSubject('alice')));
+		$action->actionExport(['privacy/export', 'alice']);
+		$json = \json_decode($this->out->flush(), true);
+		$this->assertSame(['name' => 'alice', 'email' => 'a@example.test', 'identifiers' => ['customer' => 'C-1']], $json['subject']);
+		$this->assertSame($action->getRequest(), $json['request']);
+		$this->assertCount(2, $module->getRequests(new TDataSubject('alice')));
 	}
 
 	public function testErase()
 	{
-		$action = $this->action($this->module());
+		$module = $this->module();
+		$module->addProvider(new ArrayProvider('broken', [], true));
+		$action = $this->action($module);
+		$this->assertTrue($action->actionErase(['privacy/erase', 'alice']));
+		$printed = $this->out->flush();
+		$this->assertStringContainsString('Dry run: nothing is erased. Add --yes to erase.', $printed);
+		$this->assertStringContainsString('orders: 1 items', $printed);
+		$this->assertStringContainsString('ledger: 0 items', $printed);
+		$this->assertStringContainsString('broken: export failed (RuntimeException)', $printed);
+		$this->assertSame([], $module->getRequests(new TDataSubject('alice')), 'a dry run records nothing');
+		$action->setYes('');
 		$this->assertTrue($action->actionErase(['privacy/erase', 'alice']));
 		$printed = $this->out->flush();
 		$this->assertStringContainsString('orders: erased 1', $printed);
@@ -76,22 +123,35 @@ class TPrivacyShellActionTest extends PrivacyTestCase
 		$module = $this->module();
 		$action = $this->action($module);
 		$action->actionRequests(['privacy/requests']);
-		$this->assertStringContainsString('No pending requests.', $this->out->flush());
+		$this->assertStringContainsString('No open requests.', $this->out->flush());
 		$module->openRequest('erase', new TDataSubject('alice'), 'mail');
 		$module->openRequest('export', new TDataSubject('bob'));
 		$action->actionRequests(['privacy/requests']);
 		$printed = $this->out->flush();
-		$this->assertStringContainsString('erase requested 2026-09-29, due 2026-10-29, by mail', $printed);
-		$this->assertStringContainsString('export requested 2026-09-29, due 2026-10-29, by -', $printed);
+		$this->assertStringContainsString('erase pending, requested 2026-09-29, due 2026-10-29, by mail', $printed);
+		$this->assertStringContainsString('export pending, requested 2026-09-29, due 2026-10-29, by -', $printed);
 		$action->actionRequests(['privacy/requests', 'overdue']);
 		$this->assertStringContainsString('No overdue requests.', $this->out->flush());
+	}
+
+	public function testExtend()
+	{
+		$module = $this->module();
+		$action = $this->action($module);
+		$id = $module->openRequest('erase', new TDataSubject('alice'));
+		$this->assertTrue($action->actionExtend(['privacy/extend', (string) $id, 'P2M', 'many', 'requests']));
+		$this->assertStringContainsString('#' . $id . ' is due 2026-12-29.', $this->out->flush());
+		$this->assertSame('many requests', $module->getRequestLog()->find($id)['extensions'][0]['reason']);
+		$this->clock->setTime(self::NOW + 100 * 86400);
+		$action->actionRequests(['privacy/requests', 'overdue']);
+		$this->assertStringContainsString('erase pending, requested 2026-09-29, due 2026-12-29', $this->out->flush());
 	}
 
 	public function testWithoutAModule()
 	{
 		$action = $this->action(null);
 		$this->assertNull($action->getModule());
-		foreach (['actionExport', 'actionErase', 'actionRequests'] as $method) {
+		foreach (['actionExport', 'actionErase', 'actionExtend', 'actionRequests'] as $method) {
 			$this->assertTrue($action->$method(['privacy', 'alice']));
 			$this->assertStringContainsString('No TPrivacyModule is configured.', $this->out->flush());
 		}

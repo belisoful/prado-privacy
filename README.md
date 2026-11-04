@@ -205,29 +205,44 @@ and 20; CCPA/CPRA §1798.100–.106) across every module that holds personal dat
 request and its outcome.
 
 ```xml
-<module id="rights" class="belisoful\Privacy\Rights\TPrivacyModule" ResponseDays="30">
+<module id="rights" class="belisoful\Privacy\Rights\TPrivacyModule" ResponsePeriod="P1M">
 	<provider class="belisoful\Privacy\Rights\TUserPersonalDataProvider" />
-	<provider class="belisoful\Privacy\Rights\TSessionPersonalDataProvider" />
 	<provider class="belisoful\Privacy\Rights\TConsentPersonalDataProvider" />
+	<provider class="belisoful\Privacy\Rights\TSessionPersonalDataProvider" />
 </module>
 ```
+
+The session provider comes last: erasing it destroys the session, and with `TSessionConsentStore`
+the consent provider writes its withdrawal to that session first.
 
 ```php
 // The application verifies the requester first; the module does not.
 $subject = new TDataSubject('alice', 'alice@example.com');
-$json = $rights->exportJson($subject, 'self');          // Art. 15 and 20
+$export = $rights->export($subject, 'self');            // Art. 15: status, errors, request history, data
+$json = $rights->exportJson($subject, 'self');          // Art. 20: the same, as JSON
 $results = $rights->erase($subject, 'operator:dpo');    // Art. 17: TErasureResult per provider
 $rights->rectify($subject, ['user' => ['email' => 'new@example.com']]);   // Art. 16
-$rights->openRequest('erase', $subject, 'letter');      // a request received by post counts toward the deadline
+
+// A request received by post counts toward the deadline from the day it arrives:
+$id = $rights->openRequest('erase', $subject, 'letter');
+$rights->extendRequest($id, 'P2M', 'many requests this month');           // Art. 12(3)
+$results = $rights->erase($subject, null, $id);         // answers request $id instead of opening another
 $late = $rights->getOverdueRequests();
 ```
 
 A module joins by implementing `IPersonalDataProvider`: `getPersonalDataName()`,
 `exportPersonalData()`, `erasePersonalData()` (returning a `TErasureResult`: counts erased, counts
 retained with the legal reason, errors) and `rectifyPersonalData()`. Loaded modules that implement
-it are discovered (`AutoDiscover`); others are listed with `<provider>`. A provider that throws
-does not stop the rest: the request is recorded as `partial` (or `failed`), and the exception
-message goes to the application log, not to the request record.
+it are discovered (`AutoDiscover`); others are listed with `<provider>`.
+
+A provider fails when it throws, when its `TErasureResult` has errors, or when
+`rectifyPersonalData()` returns false. A failure does not stop the other providers. The request
+is `completed` when no provider failed, `failed` when every provider failed, and `partial`
+otherwise. The export carries that `status`, an `errors` map (provider => exception class, with
+the provider's `data` entry null) and `requests`, the subject's request history including this
+request. `rectify()` returns false for a provider that threw. The exception class goes to the
+application log and the request record; the exception message, which may hold personal data,
+goes to the application log only in Debug mode.
 
 | Built-in provider | Export | Erase |
 |---|---|---|
@@ -236,20 +251,46 @@ message goes to the application log, not to the request record.
 | `TConsentPersonalDataProvider` | the current choice, `TDbConsentStore` rows, and the subject's consent log entries | withdraws the choice and deletes the rows; the log entries are retained as proof of consent (Art. 7(1), 17(3)(b)) until retention removes them; outside opt-in the stored opt-out is retained so it is still honored |
 
 Every request goes to `privacy_request` (`TDbPrivacyRequestLog`, the runtime sqlite database
-unless `<requestlog ConnectionID="…"/>`): type, the subject's hash, who asked, when, the due date
-(`ResponseDays`, 30 by default; the GDPR allows one month, the CCPA 45 days), status and the
-outcome per provider, without personal data. `onPrivacyRequest` and `onPrivacyRequestComplete`
-bracket each request.
+unless `<requestlog ConnectionID="…"/>`): type, the subject's hash, who asked (at most 255
+characters), when, the due date, status and the outcome per provider, without personal data.
+`onPrivacyRequest` and `onPrivacyRequestComplete` bracket each request.
+
+| Deadline | Law | Configuration |
+|---|---|---|
+| one month, extendable by two further months | GDPR Art. 12(3) | `ResponsePeriod="P1M"` (the default), `extendRequest($id, 'P2M', $reason)` |
+| 45 days, extendable by 45 more | CCPA §1798.130(a)(2) | `ResponsePeriod="P45D"`, `extendRequest($id, 'P45D', $reason)` |
+
+`ResponsePeriod` is an ISO 8601 duration counted in calendar terms in UTC: a request made on
+1 February is due on 1 March, and one made on 31 January is due on the last day of February.
+`extendRequest()` moves the due date of an open request by a further period and records the
+reason in the request's `extensions`; the application tells the subject. The module does not cap
+the number of extensions.
+
+A `pending`, `partial` or `failed` request is open: `getOverdueRequests()` lists the open ones past
+their due date, and passing the id to `export()`, `erase()` or `rectify()` answers it again. An
+unknown, completed, or mismatched (another type or subject) id throws. Retention removes only
+`completed` requests; open requests are kept.
+
+Request rows link on the subject's hash, the HMAC of the user name under the application's
+ValidationKey. After a user is renamed, or the ValidationKey changes, `getRequests()` no longer
+finds that subject's earlier requests.
 
 From the command line, in a `TShellApplication`:
 
 ```sh
-prado-cli privacy/export alice --by=dpo
-prado-cli privacy/erase alice --by=dpo
+prado-cli privacy/export alice --by=dpo --email=alice@example.com --id=customer:C-1
+prado-cli privacy/erase alice                    # dry run: item counts per provider, erases nothing
+prado-cli privacy/erase alice --by=dpo --yes     # erases
+prado-cli privacy/erase alice --request=42 --yes # answers the open request 42
+prado-cli privacy/extend 42 P2M "many requests this month"
 prado-cli privacy/requests overdue
 prado-cli privacy/purge
 prado-cli privacy/ropa json
 ```
+
+`export` and `erase` take `--by=<name>` (who ran it, `operator` by default), `--email=<address>`,
+`--id=<kind>:<value>` (repeatable; the subject's other identifiers) and `--request=<id>`.
+`privacy/requests` lists the open requests with their status.
 
 ## Retention
 

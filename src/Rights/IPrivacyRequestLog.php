@@ -17,17 +17,23 @@ use belisoful\Privacy\Retention\IRetentionPurger;
  *
  * IPrivacyRequestLog records data subject requests and their outcomes, so a controller can show
  * that it answered each request, and when (GDPR Art. 5(2), 12(3); CCPA regulations §7101). A
- * request is opened, then completed. Entries refer to the subject by hash only.
+ * request is opened as `pending`, then completed as `completed`, `partial` or `failed`. A
+ * `pending`, `partial` or `failed` request is open: it can be answered again, and extended.
+ * Entries refer to the subject by hash only.
  *
  * An entry is an array with the keys `id`, `type`, `subject_hash`, `requested_by`,
- * `requested_at`, `due_at`, `completed_at`, `status` and `outcome` (decoded). As an
- * `IRetentionPurger`, a log removes the requests made before a cutoff.
+ * `requested_at`, `due_at`, `completed_at`, `status`, `outcome` (decoded; null until the request
+ * is answered) and `extensions` (a list of `{reason, from, to, at}`). As an `IRetentionPurger`, a
+ * log removes the `completed` requests answered before a cutoff and keeps the open ones.
  *
  * @author Brad Anderson <belisoful@icloud.com>
  * @since 0.1.0
  */
 interface IPrivacyRequestLog extends IRetentionPurger
 {
+	/** The statuses of a request not yet fully answered. */
+	public const OPEN_STATUSES = ['pending', 'partial', 'failed'];
+
 	/**
 	 * Records a new request as pending.
 	 * @param string $type `export`, `erase` or `rectify`
@@ -40,13 +46,22 @@ interface IPrivacyRequestLog extends IRetentionPurger
 	public function open(string $type, string $subjectHash, ?string $requestedBy, int $requestedAt, int $dueAt): int;
 
 	/**
-	 * Records a request's outcome.
+	 * Records a request's outcome, replacing an earlier one; the extensions are kept.
 	 * @param int $id the request id
 	 * @param string $status `completed`, `partial` or `failed`
 	 * @param array $outcome the outcome per provider, without personal data
 	 * @param int $completedAt when, in Unix seconds
 	 */
 	public function complete(int $id, string $status, array $outcome, int $completedAt): void;
+
+	/**
+	 * Moves a request's due date and records the reason.
+	 * @param int $id the request id
+	 * @param int $dueAt the new due date, in Unix seconds
+	 * @param string $reason why the answer needs more time, without personal data
+	 * @param int $extendedAt when, in Unix seconds
+	 */
+	public function extend(int $id, int $dueAt, string $reason, int $extendedAt): void;
 
 	/**
 	 * @param int $id the request id
@@ -61,7 +76,7 @@ interface IPrivacyRequestLog extends IRetentionPurger
 	public function findBySubject(string $subjectHash): array;
 
 	/**
-	 * @return array<int, array> the pending requests, oldest first
+	 * @return array<int, array> the open requests (`pending`, `partial` or `failed`), oldest first
 	 */
-	public function findPending(): array;
+	public function findOpen(): array;
 }

@@ -18,6 +18,7 @@ use belisoful\Privacy\TConfiguredComponentTrait;
 use Prado\Exceptions\TConfigurationException;
 use Prado\Exceptions\TInvalidDataValueException;
 use Prado\Prado;
+use Prado\TApplicationMode;
 use Prado\TModule;
 use Prado\TPropertyValue;
 use Prado\Util\Clock\TApplicationClockAwareTrait;
@@ -32,7 +33,7 @@ use Prado\Xml\TXmlElement;
  * records each request and its outcome.
  *
  * ```xml
- * <module id="privacy-rights" class="belisoful\Privacy\Rights\TPrivacyModule" ResponseDays="30">
+ * <module id="privacy-rights" class="belisoful\Privacy\Rights\TPrivacyModule" ResponsePeriod="P1M">
  *   <provider class="belisoful\Privacy\Rights\TUserPersonalDataProvider" />
  *   <provider class="belisoful\Privacy\Rights\TConsentPersonalDataProvider" />
  * </module>
@@ -42,21 +43,32 @@ use Prado\Xml\TXmlElement;
  * // After the application verified the requester's identity:
  * $json = $privacy->exportJson(new TDataSubject('alice'));
  * $results = $privacy->erase(new TDataSubject('alice'), 'operator:bob');
+ * // A request received by post, recorded now and answered later:
+ * $id = $privacy->openRequest('erase', new TDataSubject('alice'), 'letter');
+ * $results = $privacy->erase(new TDataSubject('alice'), null, $id);
  * ```
  *
  * Providers come from `<provider>` elements, `addProvider()`, and, with `AutoDiscover` (the
  * default), every loaded application module that implements `IPersonalDataProvider`. A provider
- * that throws does not stop the others: the request completes as `partial` (or `failed` when every
- * provider threw), and the exception is logged without being stored.
+ * that throws, reports an erasure error, or does not apply a rectification has failed; it does not
+ * stop the others. The request completes as `partial`, or `failed` when every provider failed.
+ * The exception class goes to the application log and the request record; the exception message
+ * goes to the application log in Debug mode only.
  *
  * Every request is recorded in the request log (`LogRequests`, `RequestLog`, `TDbPrivacyRequestLog`
- * on the runtime sqlite database by default) with its due date (`ResponseDays` after the request:
- * 30 by default; GDPR Art. 12(3) allows one month, CCPA 45 days). {@see openRequest()} records a
- * request received outside the application (by mail, by phone) so it counts toward the deadline;
- * {@see getOverdueRequests()} lists the late ones.
+ * on the runtime sqlite database by default) with its due date: `ResponsePeriod` after the request,
+ * an ISO 8601 duration counted in calendar terms in UTC (`P1M` by default: 1 February is due
+ * 1 March). GDPR Art. 12(3) gives one month, extendable by two further months; CCPA §1798.130(a)(2)
+ * gives 45 days, extendable by 45 more (`ResponsePeriod="P45D"`). {@see extendRequest()} moves a
+ * due date and records the reason.
  *
- * With a `TShellApplication`, the module registers `prado-cli privacy/export`, `privacy/erase` and
- * `privacy/requests`.
+ * A `pending`, `partial` or `failed` request is open. {@see openRequest()} records a request
+ * received outside the application (by mail, by phone) so it counts toward the deadline; passing
+ * its id to {@see export()}, {@see erase()} or {@see rectify()} answers it, and answers a `partial`
+ * or `failed` request again. {@see getOverdueRequests()} lists the open requests past their due date.
+ *
+ * With a `TShellApplication`, the module registers `prado-cli privacy/export`, `privacy/erase`,
+ * `privacy/extend` and `privacy/requests`.
  *
  * The module does not verify identity: the caller verifies that the requester is the subject or
  * acts for them, before building the `TDataSubject`.
@@ -102,8 +114,8 @@ class TPrivacyModule extends TModule implements IProcessingActivityProvider
 	/** @var bool whether requests are recorded */
 	private bool $_logRequests = true;
 
-	/** @var int days to answer a request */
-	private int $_responseDays = 30;
+	/** @var string the time to answer a request, an ISO 8601 duration */
+	private string $_responsePeriod = 'P1M';
 
 	/**
 	 * Reads `<provider>` and `<requestlog>` elements (or the `providers` and `requestlog` keys of a
@@ -201,44 +213,62 @@ class TPrivacyModule extends TModule implements IProcessingActivityProvider
 	// --- requests ----------------------------------------------------------------------------
 
 	/**
-	 * Exports the subject's data from every provider.
+	 * Exports the subject's data from every provider, with the subject's recorded requests.
+	 *
+	 * `status` is `completed` when every provider answered, `partial` or `failed` otherwise.
+	 * `errors` maps each provider that threw to the exception class; its `data` entry is null.
+	 * `requests` is the subject's request history as the log holds it after this request, so it
+	 * includes this request; it is empty when requests are not logged.
 	 * @param TDataSubject $subject the verified subject
 	 * @param ?string $requestedBy who made the request: an operator's name, or `self`
-	 * @return array{subject: array, generated: string, request: int, data: array<string, array>} the export
+	 * @param ?int $requestId an open export request to answer; null opens a new one
+	 * @throws TInvalidDataValueException when `$requestId` is not an open export request of the subject
+	 * @return array{subject: array, generated: string, request: int, status: string, errors: array<string, string>, requests: array<int, array>, data: array<string, ?array>} the export
 	 */
-	public function export(TDataSubject $subject, ?string $requestedBy = null): array
+	public function export(TDataSubject $subject, ?string $requestedBy = null, ?int $requestId = null): array
 	{
-		$data = [];
-		$id = $this->runRequest(self::EXPORT, $subject, $requestedBy, function (IPersonalDataProvider $provider, string $name) use ($subject, &$data) {
+		$data = $errors = [];
+		[$id, $status] = $this->runRequest(self::EXPORT, $subject, $requestedBy, function (IPersonalDataProvider $provider, string $name) use ($subject, &$data) {
 			$data[$name] = $provider->exportPersonalData($subject);
 			return ['items' => \count($data[$name])];
-		});
+		}, function (string $name, \Throwable $e) use (&$data, &$errors) {
+			$data[$name] = null;
+			$errors[$name] = $e::class;
+		}, null, $requestId);
 		return [
 			'subject' => ['name' => $subject->getName(), 'email' => $subject->getEmail(), 'identifiers' => $subject->getIdentifiers()],
 			'generated' => \gmdate('Y-m-d\TH:i:s\Z', $this->getClock()->time()),
 			'request' => $id,
+			'status' => $status,
+			'errors' => $errors,
+			'requests' => $this->getLogRequests() ? $this->getRequests($subject) : [],
 			'data' => $data,
 		];
 	}
 
 	/**
 	 * Exports the subject's data as JSON, the machine-readable format portability asks for (GDPR Art. 20).
+	 * Invalid UTF-8 in the data becomes U+FFFD, so encoding cannot fail after the request is recorded.
 	 * @param TDataSubject $subject the verified subject
 	 * @param ?string $requestedBy who made the request
+	 * @param ?int $requestId an open export request to answer; null opens a new one
+	 * @throws TInvalidDataValueException when `$requestId` is not an open export request of the subject
 	 * @return string the export, pretty-printed JSON
 	 */
-	public function exportJson(TDataSubject $subject, ?string $requestedBy = null): string
+	public function exportJson(TDataSubject $subject, ?string $requestedBy = null, ?int $requestId = null): string
 	{
-		return \json_encode($this->export($subject, $requestedBy), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+		return \json_encode($this->export($subject, $requestedBy, $requestId), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
 	}
 
 	/**
 	 * Erases the subject's data from every provider.
 	 * @param TDataSubject $subject the verified subject
 	 * @param ?string $requestedBy who made the request
+	 * @param ?int $requestId an open erase request to answer; null opens a new one
+	 * @throws TInvalidDataValueException when `$requestId` is not an open erase request of the subject
 	 * @return array<string, TErasureResult> the result per provider; a provider that threw has a result with the error
 	 */
-	public function erase(TDataSubject $subject, ?string $requestedBy = null): array
+	public function erase(TDataSubject $subject, ?string $requestedBy = null, ?int $requestId = null): array
 	{
 		$results = [];
 		$this->runRequest(self::ERASE, $subject, $requestedBy, function (IPersonalDataProvider $provider, string $name) use ($subject, &$results) {
@@ -246,7 +276,7 @@ class TPrivacyModule extends TModule implements IProcessingActivityProvider
 			return $results[$name]->toArray();
 		}, function (string $name, \Throwable $e) use (&$results) {
 			$results[$name] = (new TErasureResult())->addError($e::class);
-		});
+		}, null, $requestId);
 		return $results;
 	}
 
@@ -255,10 +285,11 @@ class TPrivacyModule extends TModule implements IProcessingActivityProvider
 	 * @param TDataSubject $subject the verified subject
 	 * @param array<string, array> $changes provider name => field => corrected value
 	 * @param ?string $requestedBy who made the request
-	 * @throws TInvalidDataValueException when a provider name is unknown
-	 * @return array<string, bool> per provider, whether it applied the changes
+	 * @param ?int $requestId an open rectify request to answer; null opens a new one
+	 * @throws TInvalidDataValueException when a provider name is unknown, or `$requestId` is not an open rectify request of the subject
+	 * @return array<string, bool> per provider, whether it applied the changes; false for a provider that threw
 	 */
-	public function rectify(TDataSubject $subject, array $changes, ?string $requestedBy = null): array
+	public function rectify(TDataSubject $subject, array $changes, ?string $requestedBy = null, ?int $requestId = null): array
 	{
 		$providers = $this->getProviders();
 		foreach (\array_keys($changes) as $name) {
@@ -270,34 +301,44 @@ class TPrivacyModule extends TModule implements IProcessingActivityProvider
 		$this->runRequest(self::RECTIFY, $subject, $requestedBy, function (IPersonalDataProvider $provider, string $name) use ($subject, $changes, &$applied) {
 			$applied[$name] = $provider->rectifyPersonalData($subject, $changes[$name]);
 			return ['fields' => \array_keys($changes[$name]), 'applied' => $applied[$name]];
-		}, null, \array_intersect_key($providers, $changes));
+		}, function (string $name) use (&$applied) {
+			$applied[$name] = false;
+		}, \array_intersect_key($providers, $changes), $requestId);
 		return $applied;
 	}
 
 	/**
 	 * Runs a request across providers, records it, and raises the request events.
+	 *
+	 * A provider fails when it throws, when its outcome has `errors`, or when its outcome has
+	 * `applied` false. The status is `completed` when no provider failed, `failed` when every
+	 * provider failed, and `partial` otherwise. A provider exception is logged at ERROR with its
+	 * class and the request id; its message, which may hold personal data, only in Debug mode.
 	 * @param string $type the request type
 	 * @param TDataSubject $subject the subject
 	 * @param ?string $requestedBy who made the request
 	 * @param callable $run runs one provider: ($provider, $name) => outcome array
 	 * @param ?callable $failed notes a provider that threw: ($name, $exception)
 	 * @param ?array<string, IPersonalDataProvider> $providers the providers; null for all
-	 * @return int the request id; 0 when requests are not logged
+	 * @param ?int $requestId an open request to answer; null opens a new one
+	 * @throws TInvalidDataValueException when `$requestId` is not an open request of this type and subject
+	 * @return array{0: int, 1: string} the request id (0 when requests are not logged) and the status
 	 */
-	protected function runRequest(string $type, TDataSubject $subject, ?string $requestedBy, callable $run, ?callable $failed = null, ?array $providers = null): int
+	protected function runRequest(string $type, TDataSubject $subject, ?string $requestedBy, callable $run, ?callable $failed = null, ?array $providers = null, ?int $requestId = null): array
 	{
 		$providers ??= $this->getProviders();
-		$id = $this->openRequest($type, $subject, $requestedBy);
+		$id = $requestId === null ? $this->openRequest($type, $subject, $requestedBy) : $this->requireOpenRequest($requestId, $type, $subject);
 		$this->onPrivacyRequest(new TPrivacyRequestEventParameter($type, $subject, $id));
 		$outcome = [];
 		$errors = 0;
+		$debug = $this->getApplication()->getMode() === TApplicationMode::Debug;
 		foreach ($providers as $name => $provider) {
 			try {
 				$outcome[$name] = $run($provider, $name);
+				$errors += (int) (($outcome[$name]['errors'] ?? []) !== [] || ($outcome[$name]['applied'] ?? true) === false);
 			} catch (\Throwable $e) {
 				$errors++;
-				// The message may hold personal data: the log gets it, the request record only the class.
-				Prado::log('The ' . $type . ' request ' . $id . ' failed in provider "' . $name . '": ' . $e->getMessage(), TLogger::ERROR, static::class);
+				Prado::log('The ' . $type . ' request ' . $id . ' failed in provider "' . $name . '": ' . $e::class . ($debug ? ': ' . $e->getMessage() : ''), TLogger::ERROR, static::class);
 				$outcome[$name] = ['error' => $e::class];
 				if ($failed !== null) {
 					$failed($name, $e);
@@ -309,11 +350,31 @@ class TPrivacyModule extends TModule implements IProcessingActivityProvider
 			$this->getRequestLog()->complete($id, $status, $outcome, $this->getClock()->time());
 		}
 		$this->onPrivacyRequestComplete(new TPrivacyRequestEventParameter($type, $subject, $id, $status, $outcome));
+		return [$id, $status];
+	}
+
+	/**
+	 * @param int $id the request id
+	 * @param string $type the request type
+	 * @param TDataSubject $subject the subject
+	 * @throws TInvalidDataValueException when the request is unknown, closed, of another type or of another subject
+	 * @return int the request id; 0 when requests are not logged
+	 */
+	protected function requireOpenRequest(int $id, string $type, TDataSubject $subject): int
+	{
+		if (!$this->getLogRequests()) {
+			return 0;
+		}
+		$entry = $this->getRequestLog()->find($id);
+		if ($entry === null || !\in_array($entry['status'], IPrivacyRequestLog::OPEN_STATUSES, true) || $entry['type'] !== $type || $entry['subject_hash'] !== $subject->getHash()) {
+			throw new TInvalidDataValueException('privacy_request_not_open', $id, $type);
+		}
 		return $id;
 	}
 
 	/**
-	 * Records a request as pending: one the application runs now, or one received outside it and answered later.
+	 * Records a request as pending: one the application runs now, or one received outside it and
+	 * answered later by passing its id to {@see export()}, {@see erase()} or {@see rectify()}.
 	 * @param string $type `export`, `erase` or `rectify`
 	 * @param TDataSubject $subject the subject
 	 * @param ?string $requestedBy who made the request
@@ -329,10 +390,37 @@ class TPrivacyModule extends TModule implements IProcessingActivityProvider
 			return 0;
 		}
 		$now = $this->getClock()->time();
-		return $this->getRequestLog()->open($type, $subject->getHash(), $requestedBy, $now, $now + $this->getResponseDays() * 86400);
+		return $this->getRequestLog()->open($type, $subject->getHash(), $requestedBy, $now, static::addPeriod($now, $this->getResponsePeriod()));
 	}
 
 	/**
+	 * Moves an open request's due date by a further period and records the reason. GDPR Art. 12(3)
+	 * allows two further months, CCPA §1798.130(a)(2) 45 further days. The module does not cap
+	 * the total; the application tells the subject of the extension and its reason.
+	 * @param int $id the request id
+	 * @param string $period the extension, an ISO 8601 duration (`P2M`, `P45D`)
+	 * @param string $reason why the answer needs more time, without personal data
+	 * @throws TInvalidDataValueException when the period is not a duration above zero, the reason is empty, or the request is not open
+	 * @return int the new due date, in Unix seconds
+	 */
+	public function extendRequest(int $id, string $period, string $reason): int
+	{
+		$period = static::ensurePeriod($period);
+		if (($reason = \trim($reason)) === '') {
+			throw new TInvalidDataValueException('privacy_request_reason_missing', $id);
+		}
+		$entry = $this->getRequestLog()->find($id);
+		if ($entry === null || !\in_array($entry['status'], IPrivacyRequestLog::OPEN_STATUSES, true)) {
+			throw new TInvalidDataValueException('privacy_request_not_open', $id, $entry['type'] ?? 'unknown');
+		}
+		$dueAt = static::addPeriod($entry['due_at'], $period);
+		$this->getRequestLog()->extend($id, $dueAt, $reason, $this->getClock()->time());
+		return $dueAt;
+	}
+
+	/**
+	 * Request rows link on {@see TDataSubject::getHash()}, the HMAC of the user name: after a
+	 * rename, or a change of the application's ValidationKey, the earlier requests are not found.
 	 * @param TDataSubject $subject the subject
 	 * @return array<int, array> the subject's recorded requests, oldest first
 	 */
@@ -342,12 +430,50 @@ class TPrivacyModule extends TModule implements IProcessingActivityProvider
 	}
 
 	/**
-	 * @return array<int, array> the pending requests whose due date has passed
+	 * @return array<int, array> the open requests (`pending`, `partial` or `failed`) whose due date has passed
 	 */
 	public function getOverdueRequests(): array
 	{
 		$now = $this->getClock()->time();
-		return \array_values(\array_filter($this->getRequestLog()->findPending(), fn ($entry) => $entry['due_at'] < $now));
+		return \array_values(\array_filter($this->getRequestLog()->findOpen(), fn ($entry) => $entry['due_at'] < $now));
+	}
+
+	/**
+	 * Adds a calendar period to a time, in UTC. Years and months move the date first; a day the
+	 * target month lacks becomes its last day (31 January + `P1M` is the end of February), as
+	 * Regulation 1182/71 Art. 3(2)(c) counts periods. Days and times are added after.
+	 * @param int $time a Unix time
+	 * @param string $period an ISO 8601 duration
+	 * @throws \Exception when the period is not an ISO 8601 duration
+	 * @return int the Unix time after the period
+	 */
+	public static function addPeriod(int $time, string $period): int
+	{
+		$date = new \DateTimeImmutable('@' . $time);
+		$interval = new \DateInterval($period);
+		$month = $date->modify('first day of this month')->add(new \DateInterval('P' . ($interval->y * 12 + $interval->m) . 'M'));
+		$month = $month->setDate((int) $month->format('Y'), (int) $month->format('n'), \min((int) $date->format('j'), (int) $month->format('t')));
+		$interval->y = $interval->m = 0;
+		return $month->add($interval)->getTimestamp();
+	}
+
+	/**
+	 * @param mixed $value an ISO 8601 duration
+	 * @throws TInvalidDataValueException when the value is not a duration above zero
+	 * @return string the duration, upper case
+	 */
+	protected static function ensurePeriod($value): string
+	{
+		$value = \strtoupper(\trim(TPropertyValue::ensureString($value)));
+		try {
+			$valid = static::addPeriod(0, $value) > 0;
+		} catch (\Exception $e) {
+			$valid = false;
+		}
+		if (!$valid) {
+			throw new TInvalidDataValueException('privacy_response_period_invalid', $value);
+		}
+		return $value;
 	}
 
 	/**
@@ -432,25 +558,21 @@ class TPrivacyModule extends TModule implements IProcessingActivityProvider
 	}
 
 	/**
-	 * @return int days to answer a request
+	 * @return string the time to answer a request, an ISO 8601 duration
 	 */
-	public function getResponseDays(): int
+	public function getResponsePeriod(): string
 	{
-		return $this->_responseDays;
+		return $this->_responsePeriod;
 	}
 
 	/**
-	 * @param mixed $value days to answer a request, at least 1
-	 * @throws TInvalidDataValueException when the value is below 1
+	 * @param mixed $value the time to answer a request, an ISO 8601 duration above zero (`P1M`, `P45D`)
+	 * @throws TInvalidDataValueException when the value is not a duration above zero
 	 * @return static the module
 	 */
-	public function setResponseDays($value): static
+	public function setResponsePeriod($value): static
 	{
-		$value = TPropertyValue::ensureInteger($value);
-		if ($value < 1) {
-			throw new TInvalidDataValueException('privacy_response_days_invalid', $value);
-		}
-		$this->_responseDays = $value;
+		$this->_responsePeriod = static::ensurePeriod($value);
 		return $this;
 	}
 }
