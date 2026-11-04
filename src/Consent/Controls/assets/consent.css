@@ -1,4 +1,12 @@
 /* prado-privacy default consent styles. TConsentBanner/TConsentPreferences DefaultStyle="false" drops this file. */
+/*
+ * The fixed banner covers the bottom of the viewport, so a focused element scrolled into view must
+ * stay above it (WCAG 2.4.11). Set --prado-consent-scroll-padding on :root to the banner's height
+ * when the default does not fit the texts; 0 turns it off.
+ */
+html:has(.prado-consent-banner-inner) {
+	scroll-padding-bottom: var(--prado-consent-scroll-padding, 14rem);
+}
 .prado-consent-banner-inner,
 .prado-consent-preferences-inner {
 	position: fixed;
@@ -15,6 +23,19 @@
 	border-radius: 0.5rem;
 	box-shadow: 0 0.25rem 1.5rem rgba(0, 0, 0, 0.15);
 	font: 0.95rem/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+	color-scheme: light dark;
+}
+/* Links and focus outlines: at least 4.5:1 against the panel in both schemes. */
+.prado-consent-banner-inner a:not(.prado-consent-button-secondary),
+.prado-consent-preferences-inner a:not(.prado-consent-button-secondary),
+.prado-consent-policy {
+	color: #0b57d0;
+	text-decoration: underline;
+}
+.prado-consent-banner-inner :focus-visible,
+.prado-consent-preferences-inner :focus-visible {
+	outline: 2px solid #0b57d0;
+	outline-offset: 2px;
 }
 .prado-consent-preferences-inner {
 	max-height: calc(100vh - 2rem);
@@ -88,5 +109,14 @@
 	}
 	.prado-consent-button-secondary {
 		color: #f0f0f0;
+	}
+	.prado-consent-banner-inner a:not(.prado-consent-button-secondary),
+	.prado-consent-preferences-inner a:not(.prado-consent-button-secondary),
+	.prado-consent-policy {
+		color: #8ab4f8;
+	}
+	.prado-consent-banner-inner :focus-visible,
+	.prado-consent-preferences-inner :focus-visible {
+		outline-color: #8ab4f8;
 	}
 }

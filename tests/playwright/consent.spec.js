@@ -1,6 +1,6 @@
 // @ts-check
 import { test, expect } from '@playwright/test';
-import { HOME, LOG, SETTINGS, consentAfterReload, expectSameWindow, markWindow, ui } from './helpers.js';
+import { BARE, HOME, LOG, SETTINGS, consentAfterReload, expectSameWindow, focusedId, markWindow, ui } from './helpers.js';
 
 test.describe('undecided visitor in an opt-in region', () => {
 	test('sees the banner and no gated content', async ({ page }) => {
@@ -21,21 +21,38 @@ test.describe('undecided visitor in an opt-in region', () => {
 		expect(state.consent.analytics).toBe('undecided');
 	});
 
-	test('accept all and reject all have equal prominence', async ({ page }) => {
-		await page.goto(HOME);
-		const { accept, reject } = ui(page);
-		for (const button of [accept, reject]) {
-			await expect(button).toHaveClass('prado-consent-button');
-		}
-		const [a, r] = [await accept.boundingBox(), await reject.boundingBox()];
-		expect(a && r).toBeTruthy();
-		expect(Math.abs((a?.height ?? 0) - (r?.height ?? 0))).toBeLessThanOrEqual(1);
-		expect(Math.abs((a?.width ?? 0) - (r?.width ?? 0))).toBeLessThanOrEqual(2);
-		const style = (/** @type {import('@playwright/test').Locator} */ l) => l.evaluate((el) => {
-			const s = getComputedStyle(el);
-			return [s.backgroundColor, s.color, s.fontWeight, s.fontSize, s.borderColor].join('|');
+	for (const colorScheme of /** @type {const} */ (['light', 'dark'])) {
+		test(`accept all and reject all have equal prominence (${colorScheme})`, async ({ page }) => {
+			await page.emulateMedia({ colorScheme });
+			await page.goto(HOME);
+			const { accept, reject, banner } = ui(page);
+			for (const button of [accept, reject]) {
+				await expect(button).toHaveClass('prado-consent-button');
+			}
+			const [a, r] = [await accept.boundingBox(), await reject.boundingBox()];
+			expect(a && r).toBeTruthy();
+			expect(Math.abs((a?.height ?? 0) - (r?.height ?? 0))).toBeLessThanOrEqual(1);
+			expect(Math.abs((a?.width ?? 0) - (r?.width ?? 0))).toBeLessThanOrEqual(2);
+			const style = (/** @type {import('@playwright/test').Locator} */ l) => l.evaluate((el) => {
+				const s = getComputedStyle(el);
+				return [s.backgroundColor, s.color, s.fontWeight, s.fontSize, s.borderColor].join('|');
+			});
+			expect(await style(accept)).toBe(await style(reject));
+			const dark = colorScheme === 'dark';
+			await expect(accept).toHaveCSS('background-color', dark ? 'rgb(240, 240, 240)' : 'rgb(26, 26, 26)');
+			await expect(banner).toHaveCSS('background-color', dark ? 'rgb(31, 31, 31)' : 'rgb(255, 255, 255)');
+			// The policy link: #8ab4f8 on #1f1f1f is 7.8:1, #0b57d0 on #fff is 6.4:1.
+			await expect(banner.locator('.prado-consent-policy')).toHaveCSS('color', dark ? 'rgb(138, 180, 248)' : 'rgb(11, 87, 208)');
 		});
-		expect(await style(accept)).toBe(await style(reject));
+	}
+
+	test('the banner reserves scroll padding so it does not cover focused content', async ({ page }) => {
+		await page.goto(HOME);
+		const padding = () => page.evaluate(() => getComputedStyle(document.documentElement).scrollPaddingBottom);
+		expect(await padding()).toBe('224px');
+		await ui(page).accept.click();
+		await expect(ui(page).banner).toHaveCount(0);
+		expect(await padding()).toBe('auto');
 	});
 
 	test('accept all by callback updates the page in place and sets the cookie', async ({ page, context }) => {
@@ -253,5 +270,147 @@ test.describe('a region outside every list', () => {
 		await expect(ui(page).banner).toHaveCount(0);
 		await expect(page.locator('[data-consent-link="optout"]')).toHaveCount(0);
 		await expect(page.locator('#video-embed')).toBeVisible();
+	});
+});
+
+test.describe('a page without preferences', () => {
+	test('the link is a plain link to PreferencesUrl', async ({ page }) => {
+		await page.goto(BARE);
+		const link = page.locator('#BareLink');
+		await expect(link).toHaveAttribute('href', '?page=Settings');
+		await link.click();
+		await expect(page).toHaveURL(/page=Settings/);
+		await expect(page.locator('.prado-consent-preferences-inner')).toBeVisible();
+	});
+
+	test('customize links to PreferencesUrl and the banner stays until then', async ({ page }) => {
+		await page.goto(BARE);
+		const { banner, accept, reject } = ui(page);
+		const customize = banner.getByRole('link', { name: 'Customize' });
+		await expect(customize).toHaveAttribute('href', '?page=Settings');
+		await expect(accept).toBeVisible();
+		await expect(reject).toBeVisible();
+		await customize.click();
+		await expect(page).toHaveURL(/page=Settings/);
+		await expect(page.locator('.prado-consent-preferences-inner')).toBeVisible();
+		await page.locator('[data-consent-category="video"] input').check();
+		await Promise.all([
+			page.waitForResponse((response) => response.request().method() === 'POST'),
+			page.getByRole('button', { name: 'Save choices' }).click(),
+		]);
+		expect((await consentAfterReload(page)).consent.video).toBe('granted');
+	});
+});
+
+test.describe('keyboard focus', () => {
+	test('customize moves the focus to the preferences heading; close returns it', async ({ page, browserName }) => {
+		await page.goto(HOME);
+		const { customize, preferences } = ui(page);
+		await customize.focus();
+		await page.keyboard.press('Enter');
+		await expect(preferences).toBeVisible();
+		await expect.poll(() => focusedId(page)).toBe('Preferences_Heading');
+		await expect(preferences.getByRole('heading')).toHaveAttribute('tabindex', '-1');
+		// WebKit, like Safari by default, tabs to text fields only.
+		if (browserName !== 'webkit') {
+			// The necessary box is disabled, so Tab from the heading reaches analytics first.
+			await page.keyboard.press('Tab');
+			expect(await focusedId(page)).toBe('Preferences_Category_analytics');
+			await page.keyboard.press('Space');
+			await expect(ui(page).checkbox('analytics')).toBeChecked();
+		}
+		await page.getByRole('button', { name: 'Close' }).focus();
+		await page.keyboard.press('Enter');
+		await expect(preferences).toHaveCount(0);
+		await expect(ui(page).banner).toBeVisible();
+		await expect.poll(() => focusedId(page)).toBe('Banner_Customize');
+	});
+
+	test('accept all in the banner moves the focus to the footer link', async ({ page }) => {
+		await page.goto(HOME);
+		await ui(page).accept.focus();
+		await page.keyboard.press('Enter');
+		await expect(ui(page).banner).toHaveCount(0);
+		await expect.poll(() => focusedId(page)).toBe('FooterLink');
+	});
+
+	test('reject all in the banner moves the focus to the last consent link', async ({ page }) => {
+		await page.goto(HOME);
+		await ui(page).reject.focus();
+		await page.keyboard.press('Enter');
+		await expect(ui(page).banner).toHaveCount(0);
+		await expect.poll(() => focusedId(page)).toBe('FooterLink');
+	});
+
+	test('the footer link opens the preferences; save returns the focus to it', async ({ page }) => {
+		await page.goto(HOME);
+		await ui(page).accept.click();
+		await expect(ui(page).banner).toHaveCount(0);
+		await page.locator('#FooterLink').focus();
+		await page.keyboard.press('Enter');
+		const { preferences, save } = ui(page);
+		await expect(preferences).toBeVisible();
+		await expect.poll(() => focusedId(page)).toBe('Preferences_Heading');
+		await save.focus();
+		await page.keyboard.press('Enter');
+		await expect(preferences).toHaveCount(0);
+		await expect.poll(() => focusedId(page)).toBe('FooterLink');
+	});
+
+	test('accept all in the preferences opened by customize focuses the page start', async ({ page }) => {
+		await page.goto(HOME);
+		await ui(page).customize.focus();
+		await page.keyboard.press('Enter');
+		const { preferences } = ui(page);
+		await expect.poll(() => focusedId(page)).toBe('Preferences_Heading');
+		await preferences.getByRole('button', { name: 'Accept all' }).focus();
+		await page.keyboard.press('Enter');
+		await expect(preferences).toHaveCount(0);
+		await expect(ui(page).banner).toHaveCount(0);
+		await expect.poll(() => focusedId(page)).toBe('BODY');
+		expect((await consentAfterReload(page)).record.s).toBe('preferences');
+	});
+
+	test('on a settings page the focus stays on the button pressed', async ({ page }) => {
+		await page.goto(SETTINGS);
+		const save = page.getByRole('button', { name: 'Save choices' });
+		await save.focus();
+		await page.keyboard.press('Enter');
+		await expect.poll(() => focusedId(page)).toBe('Preferences_Save');
+		await expect(page.locator('.prado-consent-preferences-inner')).toBeVisible();
+	});
+});
+
+test.describe('CSRF', () => {
+	test('a callback with a tampered token is rejected', async ({ page }) => {
+		await page.goto(HOME);
+		await page.evaluate(() => { /** @type {HTMLInputElement} */ (document.getElementById('PRADO_CSRF_TOKEN')).value = 'tampered'; });
+		const [response] = await Promise.all([
+			page.waitForResponse((r) => r.request().method() === 'POST'),
+			ui(page).accept.click(),
+		]);
+		expect(response.status()).toBe(400);
+		const state = await consentAfterReload(page);
+		expect(state.decided).toBe(false);
+		await expect(ui(page).banner).toBeVisible();
+	});
+
+	test('a postback with a tampered token is rejected', async ({ page }) => {
+		await page.goto(HOME);
+		const field = (/** @type {string} */ name) => page.locator(`input[name="${name}"]`).inputValue();
+		const form = {
+			PRADO_PAGESTATE: await field('PRADO_PAGESTATE'),
+			PRADO_CSRF_TOKEN: 'tampered',
+			PRADO_POSTBACK_TARGET: 'Banner$AcceptAll',
+			'Banner$AcceptAll': 'Accept all',
+		};
+		const rejected = await page.request.post(HOME, { form, failOnStatusCode: false });
+		expect(rejected.status()).toBe(400);
+		expect((await consentAfterReload(page)).decided).toBe(false);
+		// The same postback with the page's token is accepted.
+		form.PRADO_CSRF_TOKEN = await field('PRADO_CSRF_TOKEN');
+		const accepted = await page.request.post(HOME, { form });
+		expect(accepted.status()).toBe(200);
+		expect((await consentAfterReload(page)).consent.analytics).toBe('granted');
 	});
 });

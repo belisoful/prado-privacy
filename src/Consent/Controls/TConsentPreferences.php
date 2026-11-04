@@ -26,11 +26,14 @@ use Prado\Web\UI\WebControls\TPanel;
  * `TConsentModule` category with its title and description, checked when the category is granted.
  * Required categories are checked and disabled. Save records the checkboxes with the source
  * `preferences`, so a grant made here stands against a Global Privacy Control signal (CCPA
- * regulations §7025(c)(3)). Reject all and Accept all are offered here too.
+ * regulations §7025(c)(3)). Reject all and Accept all are offered here too, recorded with the same
+ * source. Category titles and descriptions are HTML-encoded.
  *
  * The preferences are hidden until a `TConsentLink` or the banner's Customize opens them, unless
  * `AlwaysVisible` is on (for a dedicated privacy settings page). Saving closes them. Like the
- * banner, every button works by callback and by postback.
+ * banner, every button works by callback and by postback. After a callback that opens them, the
+ * focus moves to their heading (`HeadingID`, `tabindex="-1"`); after Save, Accept all, Reject all
+ * or Close it returns to the link or button that opened them, else to the start of the page.
  *
  * ```xml
  * <com:TConsentPreferences />
@@ -85,6 +88,7 @@ class TConsentPreferences extends TTemplateControl implements IConsentControl
 			$checkBox = new TCheckBox();
 			$checkBox->setID(self::CHECKBOX_PREFIX . $name);
 			$checkBox->setText($category->getTitle());
+			$checkBox->setEncode(true);
 			$checkBox->setEnabled(!$category->getRequired());
 			$wrapper->getControls()->add($checkBox);
 			if ($category->getDescription() !== '') {
@@ -120,6 +124,15 @@ class TConsentPreferences extends TTemplateControl implements IConsentControl
 		$this->Close->setText($this->getCloseText());
 		$this->Close->setVisible(!$this->getAlwaysVisible());
 		$this->registerDefaultStyle();
+		$this->registerConsentScript();
+	}
+
+	/**
+	 * @return string the client ID of the heading, which takes the focus when the preferences open
+	 */
+	public function getHeadingID(): string
+	{
+		return $this->getClientID() . '_Heading';
 	}
 
 	/**
@@ -151,7 +164,7 @@ class TConsentPreferences extends TTemplateControl implements IConsentControl
 		}
 		$module = $this->getConsentModule();
 		$module->setConsent($choice, TConsentModule::SOURCE_PREFERENCES);
-		$module->setPreferencesOpen(false);
+		$this->closePreferences($sender);
 	}
 
 	/**
@@ -161,9 +174,8 @@ class TConsentPreferences extends TTemplateControl implements IConsentControl
 	 */
 	public function acceptAllClicked($sender, $param): void
 	{
-		$module = $this->getConsentModule();
-		$module->acceptAll(TConsentModule::SOURCE_BANNER);
-		$module->setPreferencesOpen(false);
+		$this->getConsentModule()->acceptAll(TConsentModule::SOURCE_PREFERENCES);
+		$this->closePreferences($sender);
 	}
 
 	/**
@@ -173,9 +185,8 @@ class TConsentPreferences extends TTemplateControl implements IConsentControl
 	 */
 	public function rejectAllClicked($sender, $param): void
 	{
-		$module = $this->getConsentModule();
-		$module->rejectAll(TConsentModule::SOURCE_BANNER);
-		$module->setPreferencesOpen(false);
+		$this->getConsentModule()->rejectAll(TConsentModule::SOURCE_PREFERENCES);
+		$this->closePreferences($sender);
 	}
 
 	/**
@@ -185,7 +196,18 @@ class TConsentPreferences extends TTemplateControl implements IConsentControl
 	 */
 	public function closeClicked($sender, $param): void
 	{
+		$this->closePreferences($sender);
+	}
+
+	/**
+	 * Closes the preferences and, after a callback, returns the focus to their opener, else to the
+	 * button pressed when it is still shown, else to the start of the page.
+	 * @param \Prado\Web\UI\TControl $sender the button
+	 */
+	protected function closePreferences($sender): void
+	{
 		$this->getConsentModule()->setPreferencesOpen(false);
+		$this->callConsentScript('close', [$sender->getClientID()]);
 	}
 
 	/**

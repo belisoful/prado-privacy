@@ -200,9 +200,9 @@ list follows the state laws in force at release; check it against current law, a
 
 | Control | Renders | Actions |
 |---|---|---|
-| `TConsentBanner` | while consent is required and undecided | Reject all, Accept all (the same element and class: equal prominence), Customize |
-| `TConsentPreferences` | when opened, or always with `AlwaysVisible` | a checkbox per category (required ones disabled), Reject all, Accept all, Save, Close |
-| `TConsentLink` | always; `Mode="optout"` only in opt-out regions | opens the preferences; `PreferencesUrl` is followed without JavaScript |
+| `TConsentBanner` | while consent is required and undecided | Reject all, Accept all (the same element and class: equal prominence), Customize (a link to `PreferencesUrl` on a page without preferences) |
+| `TConsentPreferences` | when opened, or always with `AlwaysVisible` | a checkbox per category (required ones disabled), Reject all, Accept all, Save, Close; all recorded with source `preferences` |
+| `TConsentLink` | always; `Mode="optout"` only in opt-out regions | opens the preferences; `PreferencesUrl` is followed without JavaScript, and on a page without preferences |
 | `TConsentGate` | its content while `Category` is granted, its `DeniedTemplate` otherwise; denied content is not pre-rendered, so it registers no script | |
 
 Every action works by ActiveControl callback (the banner, the preferences, the gates and the links
@@ -210,6 +210,27 @@ re-render in place) and by postback without JavaScript. The packaged stylesheet
 (`assets/consent.css`, light and dark) is published unless `DefaultStyle="false"`. Texts are
 properties (`Message`, `AcceptText`, `RejectText`, …) passed through `Prado::localize()`.
 Withdrawing must be as easy as consenting (Art. 7(3)): put a `TConsentLink` in every page's footer.
+
+On a page without a `TConsentPreferences`, `TConsentLink` and the banner's Customize are plain links
+to their `PreferencesUrl`, a page holding `<com:TConsentPreferences AlwaysVisible="true" />`; with
+neither, rendering them throws a `TConfigurationException`. `PolicyUrl` and `PreferencesUrl` take
+http, https or relative URLs only. Category titles and `TConsentLink`'s text are HTML-encoded
+(`Encode="false"` on the link allows trusted markup).
+
+After a callback the focus moves with the change (`assets/consent.js`, loaded through the client
+script manager, so it carries the page's CSP nonce): opening the preferences focuses their heading;
+Save, Accept all, Reject all or Close there returns it to the link or button that opened them, or
+to the start of the page; Accept all or Reject all in the banner focuses the page's last
+`TConsentLink`.
+
+The banner is fixed to the bottom of the viewport. So that it does not cover a focused element
+(WCAG 2.4.11), the stylesheet sets `scroll-padding-bottom` on `html` while the banner shows, from
+`--prado-consent-scroll-padding` (default `14rem`). Set it to the banner's height when the texts
+make it taller or shorter:
+
+```css
+:root { --prado-consent-scroll-padding: 18rem; }
+```
 
 ### Consent log and schema
 

@@ -11,10 +11,12 @@
 namespace belisoful\Privacy\Consent\Controls;
 
 use belisoful\Privacy\Consent\TConsentMode;
+use Prado\Exceptions\TConfigurationException;
 use Prado\Exceptions\TInvalidDataValueException;
 use Prado\Prado;
 use Prado\TPropertyValue;
 use Prado\Web\UI\ActiveControls\TActiveLinkButton;
+use Prado\Web\UI\WebControls\TWebControl;
 
 /**
  * TConsentLink class.
@@ -27,10 +29,16 @@ use Prado\Web\UI\ActiveControls\TActiveLinkButton;
  * | `preferences` (default) | "Privacy choices" | always |
  * | `optout` | "Do Not Sell or Share My Personal Information" | only in opt-out regions (`TConsentMode::OptOut`), as CCPA §1798.135 requires there |
  *
- * `Text` overrides the default text. With JavaScript, a click is a callback that opens the
- * preferences in place. A link button needs JavaScript to post back, so `PreferencesUrl` gives the
- * link a real `href`, such as a page holding `<com:TConsentPreferences AlwaysVisible="true" />`:
- * without JavaScript the browser follows it; with JavaScript the callback runs instead.
+ * `Text` overrides the default text; it is HTML-encoded unless `Encode` is turned off. With
+ * JavaScript, a click is a callback that opens the preferences in place and moves the focus to
+ * their heading; closing them returns the focus to the link. A link button needs JavaScript to post
+ * back, so `PreferencesUrl` gives the link a real `href`, such as a page holding
+ * `<com:TConsentPreferences AlwaysVisible="true" />`: without JavaScript the browser follows it;
+ * with JavaScript the callback runs instead.
+ *
+ * On a page without a `TConsentPreferences` the link is a plain link to `PreferencesUrl`, and
+ * rendering it without a `PreferencesUrl` throws a `TConfigurationException`, since the visitor
+ * could not withdraw there. `PreferencesUrl` is http, https or relative.
  *
  * ```xml
  * <com:TConsentLink PreferencesUrl="/privacy-settings" />
@@ -76,6 +84,7 @@ class TConsentLink extends TActiveLinkButton implements IConsentControl
 		parent::onPreRender($param);
 		$this->getAttributes()->add('data-consent-link', $this->getMode());
 		$this->setVisible($this->getIsShown());
+		$this->registerConsentScript();
 	}
 
 	/**
@@ -87,12 +96,15 @@ class TConsentLink extends TActiveLinkButton implements IConsentControl
 	}
 
 	/**
-	 * Opens the preferences, then raises `OnClick`.
+	 * Opens the preferences and moves the focus to their heading, then raises `OnClick`.
 	 * @param \Prado\TEventParameter $param the event parameter
 	 */
 	public function onClick($param)
 	{
-		$this->getConsentModule()->setPreferencesOpen(true);
+		if (($preferences = $this->getPreferencesControl()) !== null) {
+			$this->getConsentModule()->setPreferencesOpen(true);
+			$this->callConsentScript('open', [$preferences->getHeadingID(), $this->getClientID()]);
+		}
 		parent::onClick($param);
 	}
 
@@ -116,6 +128,26 @@ class TConsentLink extends TActiveLinkButton implements IConsentControl
 	}
 
 	/**
+	 * Renders a callback link while the page has a `TConsentPreferences`, and a plain link to
+	 * `PreferencesUrl` otherwise.
+	 * @param \Prado\Web\UI\THtmlWriter $writer the writer
+	 * @throws TConfigurationException when the page has no `TConsentPreferences` and no `PreferencesUrl` is set
+	 */
+	protected function addAttributesToRender($writer)
+	{
+		if ($this->getPreferencesControl() !== null) {
+			parent::addAttributesToRender($writer);
+			return;
+		}
+		if ($this->getPreferencesUrl() === '') {
+			throw new TConfigurationException('privacy_preferences_unreachable', 'TConsentLink', $this->getUniqueID());
+		}
+		$writer->addAttribute('id', $this->getClientID());
+		TWebControl::addAttributesToRender($writer);
+		$writer->addAttribute('href', $this->getPreferencesUrl());
+	}
+
+	/**
 	 * Renders `PreferencesUrl` as the `href` when set, and the link button's no-op otherwise.
 	 * @param \Prado\Web\UI\THtmlWriter $writer the writer
 	 */
@@ -129,7 +161,7 @@ class TConsentLink extends TActiveLinkButton implements IConsentControl
 	}
 
 	/**
-	 * @return string the page a browser without JavaScript follows; empty for none
+	 * @return string the page a browser without JavaScript, or a page without `TConsentPreferences`, follows; empty for none
 	 */
 	public function getPreferencesUrl(): string
 	{
@@ -137,11 +169,28 @@ class TConsentLink extends TActiveLinkButton implements IConsentControl
 	}
 
 	/**
-	 * @param mixed $value the page a browser without JavaScript follows, holding a `TConsentPreferences`; empty for none
+	 * @param mixed $value the page holding a `TConsentPreferences`, for a browser without JavaScript or a page without one; empty for none
+	 * @throws TInvalidDataValueException when the URL is neither http, https nor relative
 	 */
 	public function setPreferencesUrl($value): void
 	{
-		$this->setViewState('PreferencesUrl', \trim(TPropertyValue::ensureString($value)), '');
+		$this->setViewState('PreferencesUrl', $this->ensureHttpUrl($value), '');
+	}
+
+	/**
+	 * @return bool whether the text is HTML-encoded; defaults to true
+	 */
+	public function getEncode()
+	{
+		return $this->getViewState('Encode', true);
+	}
+
+	/**
+	 * @param mixed $value whether the text is HTML-encoded; turn it off only for trusted markup
+	 */
+	public function setEncode($value)
+	{
+		$this->setViewState('Encode', TPropertyValue::ensureBoolean($value), true);
 	}
 
 	/**

@@ -1,7 +1,7 @@
 <com:TActivePanel ID="Panel" CssClass="prado-consent-preferences">
 <com:TPlaceHolder ID="Body">
 <div class="prado-consent-preferences-inner" role="region" aria-label="<%= \Prado\Web\THttpUtility::htmlEncode($this->getTitle()) %>">
-	<h2 class="prado-consent-title"><com:TLiteral ID="TitleText" Encode="true" /></h2>
+	<h2 id="<%= $this->getHeadingID() %>" class="prado-consent-title" tabindex="-1"><com:TLiteral ID="TitleText" Encode="true" /></h2>
 	<com:TPlaceHolder ID="Categories" />
 	<div class="prado-consent-actions">
 		<com:TActiveButton ID="RejectAll" CssClass="prado-consent-button" CausesValidation="false" OnClick="rejectAllClicked" OnCallback="refreshConsentControls" />
