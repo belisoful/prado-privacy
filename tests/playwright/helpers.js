@@ -4,6 +4,7 @@ import { expect } from '@playwright/test';
 export const HOME = '/app/index.php?page=Home';
 export const SETTINGS = '/app/index.php?page=Settings';
 export const LOG = '/app/index.php?page=Log';
+export const BARE = '/app/index.php?page=Bare';
 
 /**
  * Reads the module's consent as the page rendered it (#consent-state), after a GET of the home
@@ -46,4 +47,12 @@ export function ui(page) {
 		save: preferences.getByRole('button', { name: 'Save choices' }),
 		checkbox: (/** @type {string} */ category) => preferences.locator(`[data-consent-category="${category}"] input[type=checkbox]`),
 	};
+}
+
+/**
+ * The id of the focused element, "BODY" for the body.
+ * @param {import('@playwright/test').Page} page
+ */
+export function focusedId(page) {
+	return page.evaluate(() => document.activeElement === document.body ? 'BODY' : document.activeElement?.id ?? '');
 }

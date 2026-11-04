@@ -7,6 +7,7 @@
 		<com:TActiveButton ID="RejectAll" CssClass="prado-consent-button" CausesValidation="false" OnClick="rejectAllClicked" OnCallback="refreshConsentControls" />
 		<com:TActiveButton ID="AcceptAll" CssClass="prado-consent-button" CausesValidation="false" OnClick="acceptAllClicked" OnCallback="refreshConsentControls" />
 		<com:TActiveButton ID="Customize" CssClass="prado-consent-button-secondary" CausesValidation="false" OnClick="customizeClicked" OnCallback="refreshConsentControls" />
+		<com:THyperLink ID="CustomizeLink" CssClass="prado-consent-button-secondary" />
 	</div>
 </div>
 </com:TPlaceHolder>

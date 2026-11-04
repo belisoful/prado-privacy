@@ -11,6 +11,8 @@
 namespace belisoful\Privacy\Consent\Controls;
 
 use belisoful\Privacy\Consent\TConsentModule;
+use Prado\Exceptions\TConfigurationException;
+use Prado\Exceptions\TInvalidDataValueException;
 use Prado\Prado;
 use Prado\TPropertyValue;
 use Prado\Web\UI\TTemplateControl;
@@ -26,7 +28,7 @@ use Prado\Web\UI\TTemplateControl;
  * |---|---|
  * | Reject all | `TConsentModule::rejectAll()` |
  * | Accept all | `TConsentModule::acceptAll()` (categories GPC denies stay denied) |
- * | Customize | opens `TConsentPreferences` |
+ * | Customize | opens `TConsentPreferences`, or links to `PreferencesUrl` on a page without one |
  *
  * Reject all and Accept all are the same element with the same CSS class (`prado-consent-button`)
  * on the first layer, so refusing is as easy as accepting (EDPB cookie banner taskforce report,
@@ -36,7 +38,13 @@ use Prado\Web\UI\TTemplateControl;
  * The buttons are ActiveControls: with JavaScript, a click is a callback that re-renders the
  * banner, the preferences, every `TConsentGate` and every `TConsentLink` without a reload;
  * without JavaScript it is a postback. Both call the module, so the choice is stored, logged and
- * raises `onConsentChanged` the same way.
+ * raises `onConsentChanged` the same way. After a callback, Customize moves the focus to the
+ * preferences heading, and Accept all or Reject all moves it to the page's last `TConsentLink`
+ * (else to the start of the page), since their button is gone.
+ *
+ * On a page without a `TConsentPreferences`, Customize is a plain link to `PreferencesUrl` and the
+ * banner stays until the visitor chooses; showing the banner there without a `PreferencesUrl` throws
+ * a `TConfigurationException`. `PolicyUrl` and `PreferencesUrl` are http, https or relative.
  *
  * ```xml
  * <com:TConsentBanner PolicyUrl="/privacy" />
@@ -55,6 +63,7 @@ use Prado\Web\UI\TTemplateControl;
  * @property-read \Prado\Web\UI\ActiveControls\TActiveButton $AcceptAll the accept-all button
  * @property-read \Prado\Web\UI\ActiveControls\TActiveButton $RejectAll the reject-all button
  * @property-read \Prado\Web\UI\ActiveControls\TActiveButton $Customize the button that opens the preferences
+ * @property-read \Prado\Web\UI\WebControls\THyperLink $CustomizeLink the link to `PreferencesUrl`, on a page without preferences
  *
  * @author Brad Anderson <belisoful@icloud.com>
  * @since 0.1.0
@@ -97,12 +106,41 @@ class TConsentBanner extends TTemplateControl implements IConsentControl
 		$this->AcceptAll->setText($this->getAcceptText());
 		$this->RejectAll->setText($this->getRejectText());
 		$this->Customize->setText($this->getCustomizeText());
+		$this->CustomizeLink->setText($this->getCustomizeText());
+		$this->CustomizeLink->setNavigateUrl($this->getPreferencesUrl());
 		$this->PolicyLink->setVisible($this->getPolicyUrl() !== '');
 		$this->PolicyLink->setNavigateUrl($this->getPolicyUrl());
 		$this->PolicyLink->setText($this->getPolicyText());
 		$this->GpcNotice->setVisible($module->getIsGpcHonored());
 		$this->GpcText->setText($this->getGpcMessage());
 		$this->registerDefaultStyle();
+		$this->registerConsentScript();
+	}
+
+	/**
+	 * Shows Customize as the button while the page has a `TConsentPreferences`, and as the link
+	 * to `PreferencesUrl` otherwise, then renders the banner. Deciding here, after every control
+	 * has registered and pre-rendered, sees the preferences wherever they are on the page.
+	 * @param \Prado\Web\UI\THtmlWriter $writer the writer
+	 */
+	public function render($writer)
+	{
+		$this->applyCustomize();
+		parent::render($writer);
+	}
+
+	/**
+	 * Chooses the Customize button or link.
+	 * @throws TConfigurationException when the banner asks on a page without a `TConsentPreferences` and no `PreferencesUrl` is set
+	 */
+	protected function applyCustomize(): void
+	{
+		$button = $this->getPreferencesControl() !== null;
+		if (!$button && $this->getPreferencesUrl() === '' && $this->getIsShown()) {
+			throw new TConfigurationException('privacy_preferences_unreachable', 'TConsentBanner', $this->getUniqueID());
+		}
+		$this->Customize->setVisible($button);
+		$this->CustomizeLink->setVisible(!$button);
 	}
 
 	/**
@@ -122,6 +160,7 @@ class TConsentBanner extends TTemplateControl implements IConsentControl
 	public function acceptAllClicked($sender, $param): void
 	{
 		$this->getConsentModule()->acceptAll(TConsentModule::SOURCE_BANNER);
+		$this->callConsentScript('chosen');
 	}
 
 	/**
@@ -132,16 +171,21 @@ class TConsentBanner extends TTemplateControl implements IConsentControl
 	public function rejectAllClicked($sender, $param): void
 	{
 		$this->getConsentModule()->rejectAll(TConsentModule::SOURCE_BANNER);
+		$this->callConsentScript('chosen');
 	}
 
 	/**
-	 * Opens the preferences.
+	 * Opens the preferences and moves the focus to their heading; without a `TConsentPreferences`
+	 * on the page nothing opens, so the banner stays.
 	 * @param \Prado\Web\UI\TControl $sender the button
 	 * @param \Prado\TEventParameter $param the event parameter
 	 */
 	public function customizeClicked($sender, $param): void
 	{
-		$this->getConsentModule()->setPreferencesOpen(true);
+		if (($preferences = $this->getPreferencesControl()) !== null) {
+			$this->getConsentModule()->setPreferencesOpen(true);
+			$this->callConsentScript('open', [$preferences->getHeadingID(), $this->Customize->getClientID()]);
+		}
 	}
 
 	/**
@@ -150,6 +194,7 @@ class TConsentBanner extends TTemplateControl implements IConsentControl
 	 */
 	public function refreshConsent($writer): void
 	{
+		$this->applyCustomize();
 		$this->Panel->render($writer);
 	}
 
@@ -163,10 +208,28 @@ class TConsentBanner extends TTemplateControl implements IConsentControl
 
 	/**
 	 * @param mixed $value the URL of the privacy policy; empty hides the link
+	 * @throws TInvalidDataValueException when the URL is neither http, https nor relative
 	 */
 	public function setPolicyUrl($value): void
 	{
-		$this->setViewState('PolicyUrl', \trim(TPropertyValue::ensureString($value)), '');
+		$this->setViewState('PolicyUrl', $this->ensureHttpUrl($value), '');
+	}
+
+	/**
+	 * @return string the page holding a `TConsentPreferences` that Customize links to on a page without one; empty for none
+	 */
+	public function getPreferencesUrl(): string
+	{
+		return $this->getViewState('PreferencesUrl', '');
+	}
+
+	/**
+	 * @param mixed $value the page holding a `TConsentPreferences` that Customize links to on a page without one; empty for none
+	 * @throws TInvalidDataValueException when the URL is neither http, https nor relative
+	 */
+	public function setPreferencesUrl($value): void
+	{
+		$this->setViewState('PreferencesUrl', $this->ensureHttpUrl($value), '');
 	}
 
 	/**

@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<com:THead Title="No preferences" />
+<body>
+<com:TForm>
+	<h1>A page without preferences</h1>
+	<footer>
+		<com:TConsentLink ID="BareLink" PreferencesUrl="?page=Settings" />
+	</footer>
+	<com:TConsentBanner ID="Banner" PolicyUrl="/privacy" PreferencesUrl="?page=Settings" />
+</com:TForm>
+</body>
+</html>

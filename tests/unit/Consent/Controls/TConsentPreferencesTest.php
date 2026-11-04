@@ -45,6 +45,23 @@ class TConsentPreferencesTest extends ConsentControlTestCase
 		$this->assertStringContainsString('data-consent-category="marketing"', $html);
 		$this->assertStringContainsString('<p class="prado-consent-description">Measuring visits and use of the site.</p>', $html);
 		$this->assertTrue($preferences->Close->getVisible(false));
+		$this->assertStringContainsString('<h2 id="Prefs_Heading" class="prado-consent-title" tabindex="-1">Privacy preferences</h2>', $html);
+		$this->assertSame('Prefs_Heading', $preferences->getHeadingID());
+		$this->assertTrue($page->getClientScript()->isScriptFileRegistered('prado-consent'));
+	}
+
+	public function testCategoryTitlesAreEncoded()
+	{
+		$this->module->addCategory(new TConsentCategory('video', 'Video <script>x</script> & audio', 'Players <i>&</i> more'));
+		$preferences = $this->preferences();
+		$preferences->setAlwaysVisible(true);
+		$page = $this->page($preferences)->runPreRender();
+		$this->assertTrue($preferences->getCheckBoxes()['video']->getEncode());
+		$html = $page->renderForm();
+		// THttpUtility::htmlEncode() encodes < > " and leaves & for entities.
+		$this->assertStringContainsString('>Video &lt;script&gt;x&lt;/script&gt; & audio</label>', $html);
+		$this->assertStringContainsString('>Players &lt;i&gt;&&lt;/i&gt; more</p>', $html);
+		$this->assertStringNotContainsString('<script>x', $html);
 	}
 
 	public function testAlwaysVisibleHasNoCloseButton()
@@ -75,6 +92,7 @@ class TConsentPreferencesTest extends ConsentControlTestCase
 		$this->module->setPreferencesOpen(true);
 		$preferences->getCheckBoxes()['functional']->setChecked(true);
 		$preferences->saveClicked($preferences->Save, null);
+		$this->assertSame([['PradoConsent.close' => ['Prefs_Save']]], $preferences->getPage()->clientFunctions());
 		$record = $this->module->getRecord();
 		$this->assertSame('preferences', $record->getSource());
 		$this->assertSame('granted', $record->getState('functional'));
@@ -90,14 +108,21 @@ class TConsentPreferencesTest extends ConsentControlTestCase
 		$this->module->setPreferencesOpen(true);
 		$preferences->acceptAllClicked($preferences->AcceptAll, null);
 		$this->assertTrue($this->module->isGranted('marketing'));
+		$this->assertSame('preferences', $this->module->getRecord()->getSource());
 		$this->assertFalse($this->module->getPreferencesOpen());
 		$this->module->setPreferencesOpen(true);
 		$preferences->rejectAllClicked($preferences->RejectAll, null);
 		$this->assertFalse($this->module->isGranted('marketing'));
+		$this->assertSame('preferences', $this->module->getRecord()->getSource());
 		$this->assertFalse($this->module->getPreferencesOpen());
 		$this->module->setPreferencesOpen(true);
 		$preferences->closeClicked($preferences->Close, null);
 		$this->assertFalse($this->module->getPreferencesOpen());
+		$this->assertSame([
+			['PradoConsent.close' => ['Prefs_AcceptAll']],
+			['PradoConsent.close' => ['Prefs_RejectAll']],
+			['PradoConsent.close' => ['Prefs_Close']],
+		], $preferences->getPage()->clientFunctions());
 	}
 
 	public function testTexts()

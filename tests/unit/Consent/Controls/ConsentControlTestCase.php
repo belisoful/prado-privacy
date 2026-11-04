@@ -3,7 +3,6 @@
 namespace belisoful\Privacy\Test\Unit\Consent\Controls;
 
 use belisoful\Privacy\Consent\TSessionConsentStore;
-use belisoful\Privacy\Test\Unit\LifecyclePage;
 use belisoful\Privacy\Test\Unit\PrivacyTestCase;
 use belisoful\Privacy\Test\Unit\ProbeConsentModule;
 use Prado\IO\TTextWriter;
@@ -58,9 +57,9 @@ abstract class ConsentControlTestCase extends PrivacyTestCase
 	 * A page holding the controls, initialized.
 	 * @param array $controls
 	 */
-	protected function page(...$controls): LifecyclePage
+	protected function page(...$controls): ConsentTestPage
 	{
-		return (new LifecyclePage($controls))->runInit();
+		return (new ConsentTestPage($controls))->runInit();
 	}
 
 	/**
