@@ -14,6 +14,10 @@
 /CLAUDE.md        export-ignore
 /CONTRIBUTING.md  export-ignore
 /SECURITY.md      export-ignore
+/.nvmrc          export-ignore
+/package.json     export-ignore
+/package-lock.json export-ignore
+/playwright.config.js export-ignore
 
 # Normalize line endings for the text sources.
 *.php   text eol=lf
