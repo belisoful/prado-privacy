@@ -4,3 +4,4 @@
 
 ## Files
 - [DESIGN_2026-09-29.md](DESIGN_2026-09-29.md): the package design (class list, seams, storage schema, GPC, the ganalytics adapter) and the decisions awaiting the owner.
+- [AUDIT_2026-11-03.md](AUDIT_2026-11-03.md): a full audit of the repository at `388aa13`: findings by area and severity, what is solid, and a suggested fix order.
