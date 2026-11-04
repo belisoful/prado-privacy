@@ -46,8 +46,9 @@
 	"minimum-stability": "dev",
 	"prefer-stable": true,
 	"require": {
-		"php": ">=8.1.0",
-		"pradosoft/prado": "^4.4@dev"
+		"php": ">=8.2.0",
+		"pradosoft/prado": "^4.4@dev",
+		"pradosoft/prado-activerecord": "^1.0"
 	},
 	"suggest": {
 		"ext-pdo_sqlite": "The consent log, the database consent store, the privacy request log and retention purges without a configured database connection.",
@@ -62,7 +63,7 @@
 	},
 	"config": {
 		"platform": {
-			"php": "8.1"
+			"php": "8.2"
 		}
 	},
 	"scripts": {

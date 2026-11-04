@@ -12,7 +12,9 @@ The first release, 0.1.0.
 
 - The package, stamped from the PRADO extension skeleton (`belisoful/prado-extension`), with
   ganalytics' tooling: 100% line and branch coverage (`composer coverage-branches`), fully
-  qualified native calls, a Playwright harness, and CI on PHP 8.1 – 8.5 against PRADO `master`.
+  qualified native calls, a Playwright harness, and CI on PHP 8.2 – 8.5 against PRADO `master`.
+- PHP 8.2 or newer, as PRADO `master` requires, and `pradosoft/prado-activerecord` for
+  `TActiveRecord`, which moved out of the framework core.
 - Consent management. `TConsentModule` (the bootstrap module) holds the categories (`necessary`,
   `analytics`, `marketing`, `functional`, `personalization`, and any `<category>`), the visitor's
   consent (`getConsent()`, `isGranted()`, `getIsDecided()`), the policy `Version`, `Expires`

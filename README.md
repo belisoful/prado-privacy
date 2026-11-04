@@ -20,8 +20,9 @@ categories a site uses, the legal basis of each processing activity, and the adv
 
 | Requirement | Scope | Purpose |
 |---|---|---|
-| PHP 8.1 – 8.5 | required | The runtime. CI runs every minor from 8.1 through 8.5 |
-| PRADO Framework `^4.4` | required | Modules, controls and ActiveControls, `THttpCookie`, `TSecurityManager`, `TActiveRecord`, `TCronModule`, the clock seam, the Composer `extra.prado` extension mechanism |
+| PHP 8.2 – 8.5 | required | The runtime. CI runs every minor from 8.2 through 8.5 |
+| PRADO Framework `^4.4` | required | Modules, controls and ActiveControls, `THttpCookie`, `TSecurityManager`, `TCronModule`, the clock seam, the Composer `extra.prado` extension mechanism |
+| `pradosoft/prado-activerecord` `^1.0` | required | `TActiveRecord`, for the consent log, the database consent store and the request log; it left the framework core in 4.4 |
 | `ext-pdo_sqlite` | optional | The consent log, the database consent store, the request log and retention purges without a configured database connection |
 | `maxmind-db/reader` | optional | Locating visitors from a local MaxMind DB file |
 
@@ -399,7 +400,7 @@ npx playwright test --project=chromium     # the controls in a real browser
 ```
 
 CI (`.github/workflows/prado-privacy.yml`) runs lint, php-cs-fixer, PHPStan and PHPUnit on PHP
-8.1 through 8.5 against PRADO's `master` branch, measures coverage (every line and branch of
+8.2 through 8.5 against PRADO's `master` branch, measures coverage (every line and branch of
 `src/`), runs the Playwright specs in Chromium, Firefox and WebKit, and verifies the Composer
 install. See [AGENTS.md](AGENTS.md) for the conventions.
 

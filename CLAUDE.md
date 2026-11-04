@@ -14,7 +14,7 @@ and a records-of-processing registry. Class names are vendor-neutral so parts ca
   Every type carries `@since 0.1.0` in its class docblock; a type or public method added later
   carries `@since` with the version it ships in.
 - Record every user-visible change under `## [Unreleased]` in `CHANGELOG.md` as it lands.
-- Supported and CI-tested PHP: **8.1, 8.2, 8.3, 8.4, 8.5**.
+- Supported and CI-tested PHP: **8.2, 8.3, 8.4, 8.5**.
 
 ## Key facts
 
@@ -45,7 +45,7 @@ and a records-of-processing registry. Class names are vendor-neutral so parts ca
 ```sh
 php -l <file>                                        # syntax (composer lint for all)
 composer fix        # php-cs-fixer on src and tests (tabs)
-composer stan       # PHPStan level 3, PHP 8.1 – 8.5
+composer stan       # PHPStan level 3, PHP 8.2 – 8.5
 composer unittest   # vendor/bin/phpunit --testsuite unit
 npx playwright test --project=chromium   # the controls, end to end (PW_CHROMIUM=<binary> if needed)
 ```

@@ -154,9 +154,9 @@ class PackageStandardTest extends PHPUnit\Framework\TestCase
 		$this->assertNotEmpty(self::$composer['license'] ?? '', 'the package declares a license');
 		$this->assertArrayHasKey('pradosoft/prado', self::$composer['require'] ?? [], 'the package requires the framework');
 		$this->assertMatchesRegularExpression(
-			'/>=\s*8\.1/',
+			'/>=\s*8\.2/',
 			(string) (self::$composer['require']['php'] ?? ''),
-			'the package requires PHP 8.1 or newer'
+			'the package requires PHP 8.2 or newer'
 		);
 		foreach (['phpunit/phpunit', 'phpstan/phpstan', 'friendsofphp/php-cs-fixer'] as $tool) {
 			$this->assertArrayHasKey($tool, self::$composer['require-dev'] ?? [], "the package develops against {$tool}");
