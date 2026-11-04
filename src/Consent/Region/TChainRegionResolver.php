@@ -20,6 +20,10 @@ use Prado\Web\THttpRequest;
  * TChainRegionResolver asks several resolvers in order and returns the first region one gives.
  * A typical chain reads a CDN header first (free), then a local database, then an API.
  *
+ * A country without its subdivision (`US`) is not final when a region group holds subdivisions of
+ * that country ({@see TRegionGroups::hasSubdivisions()}): the chain asks the next resolvers for the
+ * subdivision, and returns the country when none gives a region of it.
+ *
  * `Resolvers` takes module ids (a comma-separated string), or in PHP configuration an array of
  * resolver instances, configuration arrays (`['class' => …, …]`) and module ids.
  *
@@ -43,16 +47,22 @@ class TChainRegionResolver extends TComponent implements IRegionResolver
 
 	/**
 	 * @param THttpRequest $request the request
-	 * @return ?string the first region a resolver gives; null when none does
+	 * @return ?string the first region a resolver gives, preferring a subdivision to its country; null when none does
 	 */
 	public function resolveRegion(THttpRequest $request): ?string
 	{
+		$country = null;
 		foreach ($this->getResolvers() as $resolver) {
-			if (($region = $resolver->resolveRegion($request)) !== null) {
+			$region = $resolver->resolveRegion($request);
+			if ($region === null || ($country !== null && !\str_starts_with($region, $country . '-'))) {
+				continue;
+			}
+			if (\strlen($region) !== 2 || !TRegionGroups::hasSubdivisions($region)) {
 				return $region;
 			}
+			$country ??= $region;
 		}
-		return null;
+		return $country;
 	}
 
 	/**

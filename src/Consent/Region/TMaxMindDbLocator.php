@@ -33,7 +33,8 @@ use Prado\Util\Log\TLogger;
  *
  * The operator downloads and refreshes the file (MaxMind's `geoipupdate`, or a cron job); the
  * locator only reads it. `File` accepts a path or a PRADO namespace path. The reader opens on the
- * first lookup.
+ * first lookup. A missing file or a corrupt database throws from {@see locate()};
+ * `TIpRegionResolver` logs it and treats the region as unknown, so the page is not broken.
  *
  * ```xml
  * <module id="geo-ip" class="belisoful\Privacy\Consent\Region\TIpRegionResolver">
@@ -65,6 +66,7 @@ class TMaxMindDbLocator extends TComponent implements IIpLocator
 	 * Looks the address up in the database.
 	 * @param string $ip an IPv4 or IPv6 address
 	 * @throws TConfigurationException when the file or the reader package is missing
+	 * @throws \Exception when the database is corrupt (`MaxMind\Db\Reader\InvalidDatabaseException`)
 	 * @return ?TIpLocation the location; null when the database has no country for the address
 	 */
 	public function locate(string $ip): ?TIpLocation
@@ -73,7 +75,8 @@ class TMaxMindDbLocator extends TComponent implements IIpLocator
 			$data = $this->getReader()->get($ip);
 		} catch (\InvalidArgumentException $e) {
 			// An IPv6 address in an IPv4-only database, or an address the reader refuses.
-			Prado::log('The MaxMind DB lookup refused "' . $ip . '": ' . $e->getMessage(), TLogger::WARNING, static::class);
+			// The reader's message names the address; the log does not keep it.
+			Prado::log('The MaxMind DB lookup refused an address: ' . \str_replace($ip, '[address]', $e->getMessage()), TLogger::WARNING, static::class);
 			return null;
 		}
 		return TIpLocation::fromData($data, $this->getCountryPath(), $this->getSubdivisionPath(), 'mmdb');

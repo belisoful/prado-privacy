@@ -6,6 +6,8 @@ use belisoful\Privacy\Consent\Region\TMaxMindDbLocator;
 use belisoful\Privacy\Test\Unit\MmdbWriter;
 use belisoful\Privacy\Test\Unit\PrivacyTestCase;
 use Prado\Exceptions\TConfigurationException;
+use Prado\Prado;
+use Prado\Util\Log\TLogger;
 
 class TMaxMindDbLocatorTest extends PrivacyTestCase
 {
@@ -37,7 +39,11 @@ class TMaxMindDbLocatorTest extends PrivacyTestCase
 		$this->assertSame('US-CA', $location->getRegion());
 		$this->assertSame('mmdb', $location->getSource());
 		$this->assertNull($locator->locate('8.8.8.8'), 'not in the database');
+		Prado::getLogger()->deleteLogs();
 		$this->assertNull($locator->locate('2001:db8::1'), 'IPv6 in an IPv4 database is refused and logged');
+		$logs = \array_values(Prado::getLogger()->getLogs(TLogger::WARNING, TMaxMindDbLocator::class));
+		$this->assertCount(1, $logs);
+		$this->assertStringNotContainsString('2001:db8::1', $logs[0][0], 'the log keeps no address');
 		$this->assertSame($locator->getReader(), $locator->getReader());
 	}
 

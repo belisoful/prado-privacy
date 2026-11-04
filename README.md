@@ -161,13 +161,26 @@ reading, and right for a site that serves Europe without locating visitors. To p
 <module id="belisoful/prado-privacy" RegionResolver="geo" />
 ```
 
-`TIpRegionResolver` reads `X-Forwarded-For` only behind a `TrustedProxies` peer, skips private
-and reserved addresses, caches each answer (a day) and each miss (an hour) under an HMAC of the
-address, and fails closed: a visitor it cannot place is asked for consent. A lookup through a web
-API sends the visitor's IP address to the provider before any consent. Prefer a CDN header or a
-local database, and list the provider as a recipient in the records of processing. Check each
-provider's current terms, quotas and endpoints; the presets reflect them as of this release.
-Behaviors can override the region with `dyResolveRegion` and the consent with `dyConsent`.
+`TIpRegionResolver` reads `X-Forwarded-For`, or without it the `for=` parameters of `Forwarded`
+(RFC 7239), only behind a `TrustedProxies` peer, and takes the rightmost hop that is not a trusted
+proxy. Ports and brackets are removed from each hop, and an IPv4-mapped IPv6 address
+(`::ffff:10.0.0.1`, as a dual-stack listener reports it) is matched and validated as IPv4, so write
+the trusted ranges in IPv4. The resolver skips private and reserved addresses, caches each answer
+(a day) and each miss (an hour) under an HMAC of the address, in keys that carry its module id,
+and fails closed: a visitor it cannot place is asked for consent. A failure of the locator or the
+cache (a missing or corrupt `.mmdb` file, a timeout, a cache error) is logged as a warning without
+the address and never reaches the page; only a missing `Locator` is thrown. The web API transport follows no
+redirects, bounds the whole request by `Timeout` and refuses an answer above 64 KiB.
+
+A lookup through a web API sends the visitor's IP address to the provider before any consent.
+Prefer a CDN header or a local database, and list the provider as a recipient in the records of
+processing. Check each provider's current terms, quotas and endpoints; the presets reflect them as
+of this release. The `ipstack` preset uses https, which ipstack's free plan does not offer: it
+needs a paid plan, or a `Url` with `http://`, which sends the address and the key unencrypted.
+
+`TChainRegionResolver` treats a country without its subdivision (`US`, from `CF-IPCountry` or a
+country-only database) as provisional when a region group lists subdivisions of it, and asks the
+next resolvers for the state; the country is the answer when none gives one. Behaviors can override the region with `dyResolveRegion` and the consent with `dyConsent`.
 
 ### Global Privacy Control
 
@@ -175,7 +188,7 @@ A `Sec-GPC: 1` request header is honored as follows (`HonorGpc="everywhere"`):
 
 | Region | Effect |
 |---|---|
-| opt-out (California; Colorado, Connecticut, Delaware, Maryland, Minnesota, Montana, New Hampshire, New Jersey, Oregon, Texas) | `marketing` is denied, overriding a banner grant or no choice. CCPA regulations §7025 make the signal a valid opt-out of sale and sharing. A grant the visitor makes per category in the preferences stands (§7025(c)(3)) |
+| opt-out (California; Colorado, Connecticut, Delaware, Maryland, Minnesota, Montana, Nebraska, New Hampshire, New Jersey, Oregon, Texas) | `marketing` is denied, overriding a banner grant or no choice. CCPA regulations §7025 make the signal a valid opt-out of sale and sharing. A grant the visitor makes per category in the preferences stands (§7025(c)(3)) |
 | opt-in (EU, EEA, UK, CH, unknown) | `marketing` starts denied and the banner says so; Accept all leaves it denied; only a grant in the preferences overrides the signal |
 | anywhere else | as for opt-out |
 
