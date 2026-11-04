@@ -24,7 +24,7 @@ use Prado\Exceptions\TInvalidDataValueException;
  * | `EEA` | the EU, Iceland, Liechtenstein and Norway |
  * | `UK` | the United Kingdom (`GB`) |
  * | `CH` | Switzerland |
- * | `US-GPC` | California and the US states whose privacy laws require honoring a universal opt-out signal such as Global Privacy Control: Colorado, Connecticut, Delaware, Maryland, Minnesota, Montana, New Hampshire, New Jersey, Oregon, Texas |
+ * | `US-GPC` | California and the US states whose privacy laws require honoring a universal opt-out signal such as Global Privacy Control: Colorado, Connecticut, Delaware, Maryland, Minnesota, Montana, Nebraska, New Hampshire, New Jersey, Oregon, Texas |
  *
  * `US-GPC` follows the state laws in force when this version was released; check it against
  * current law and extend it with {@see defineGroup()} or a list of codes.
@@ -46,7 +46,7 @@ class TRegionGroups
 		'EEA' => ['@EU', 'IS', 'LI', 'NO'],
 		'UK' => ['GB'],
 		'CH' => ['CH'],
-		'US-GPC' => ['US-CA', 'US-CO', 'US-CT', 'US-DE', 'US-MD', 'US-MN', 'US-MT', 'US-NH', 'US-NJ', 'US-OR', 'US-TX'],
+		'US-GPC' => ['US-CA', 'US-CO', 'US-CT', 'US-DE', 'US-MD', 'US-MN', 'US-MT', 'US-NE', 'US-NH', 'US-NJ', 'US-OR', 'US-TX'],
 	];
 
 	/**
@@ -128,6 +128,23 @@ class TRegionGroups
 		foreach ($codes as $code) {
 			if (\str_starts_with($code, $prefix)) {
 				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * @param string $country a country code (`US`)
+	 * @return bool whether a group holds a subdivision of the country (`US-CA`), so its subdivision can change the mode
+	 */
+	public static function hasSubdivisions(string $country): bool
+	{
+		$prefix = \strtoupper(\trim($country)) . '-';
+		foreach (self::$_groups as $codes) {
+			foreach ($codes as $code) {
+				if (\str_starts_with($code, $prefix)) {
+					return true;
+				}
 			}
 		}
 		return false;

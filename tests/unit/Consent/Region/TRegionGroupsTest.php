@@ -22,6 +22,14 @@ class TRegionGroupsTest extends TestCase
 		$this->assertContains('NO', $eea);
 		$this->assertSame(['GB'], TRegionGroups::expand('UK'));
 		$this->assertContains('US-CA', TRegionGroups::expand('US-GPC'));
+		$this->assertContains('US-NE', TRegionGroups::expand('US-GPC'), 'the Nebraska Data Privacy Act requires honoring a universal opt-out');
+	}
+
+	public function testHasSubdivisions()
+	{
+		$this->assertTrue(TRegionGroups::hasSubdivisions(' us '));
+		$this->assertFalse(TRegionGroups::hasSubdivisions('DE'));
+		$this->assertFalse(TRegionGroups::hasSubdivisions('U'), 'a prefix of a code is not a country');
 	}
 
 	public function testExpandMixesGroupsAndCodesWithoutDuplicates()

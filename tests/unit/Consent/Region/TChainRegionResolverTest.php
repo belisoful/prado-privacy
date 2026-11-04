@@ -35,4 +35,30 @@ class TChainRegionResolverTest extends PrivacyTestCase
 		$this->assertCount(1, $chain->getResolvers());
 		$this->assertNull($chain->resolveRegion(new FakeRequest()));
 	}
+
+	public function testACountryWithSubdivisionsAsksTheNextResolvers()
+	{
+		$request = new FakeRequest();
+		$chain = fn (...$regions) => (new TChainRegionResolver())->setResolvers(\array_map(fn ($region) => new FixedRegionResolver($region), $regions));
+		$this->assertSame('US-CA', $chain('US', null, 'DE', 'US', 'US-CA', 'US-TX')->resolveRegion($request), 'the first subdivision of the country');
+		$this->assertSame('US', $chain('US', 'DE', null)->resolveRegion($request), 'the country when no resolver knows the state');
+		$this->assertSame('DE', $chain('DE', 'US-CA')->resolveRegion($request), 'a country no group divides is final');
+		$this->assertSame('US-NY', $chain(null, 'US-NY', 'US-CA')->resolveRegion($request));
+	}
+}
+
+/**
+ * Answers one fixed region.
+ */
+class FixedRegionResolver extends \Prado\TComponent implements \belisoful\Privacy\Consent\Region\IRegionResolver
+{
+	public function __construct(private ?string $_region)
+	{
+		parent::__construct();
+	}
+
+	public function resolveRegion(\Prado\Web\THttpRequest $request): ?string
+	{
+		return $this->_region;
+	}
 }

@@ -129,4 +129,26 @@ class THttpIpLocatorTest extends PrivacyTestCase
 		$closed = (new THttpIpLocator())->setUrl('http://127.0.0.1:1/{ip}')->setTimeout(0.5);
 		$this->assertNull($closed->locate('198.51.100.1'), 'a refused connection is status 0');
 	}
+
+	public function testTheTransportFollowsNoRedirectAndIsBounded()
+	{
+		$server = LocalHttpServer::instance();
+		$probe = new class () extends THttpIpLocator {
+			public function get(string $url, float $timeout = 2.0): array
+			{
+				return $this->transport($url, ['Accept: application/json'], $timeout);
+			}
+		};
+		$this->assertSame([302, '{"country_code":"DE"}'], $probe->get($server->url('/?redirect=' . \rawurlencode($server->url('/elsewhere')))), 'a redirect is not followed');
+		$this->assertNull((new THttpIpLocator())->setUrl($server->url('/{ip}?redirect=http%3A%2F%2F127.0.0.1%3A1%2F'))->locate('198.51.100.1'), 'a redirect is a failure');
+		[$status, $body] = $probe->get($server->url('/?bytes=' . THttpIpLocator::MAX_RESPONSE_BYTES));
+		$this->assertSame(200, $status);
+		$this->assertSame(THttpIpLocator::MAX_RESPONSE_BYTES, \strlen($body), 'a body of the limit is read');
+		$this->assertSame([0, null], $probe->get($server->url('/?bytes=' . (THttpIpLocator::MAX_RESPONSE_BYTES + 1))), 'a body over the limit');
+		$this->assertSame([0, null], $probe->get($server->url('/?bytes=1000000')), 'a body far over the limit');
+		$start = \microtime(true);
+		$this->assertSame([0, null], $probe->get($server->url('/?drip=0.05&count=20'), 0.3), 'a slow body: the timeout bounds the whole request');
+		$this->assertSame([0, null], $probe->get($server->url('/?drip=0.6&count=1'), 0.3), 'a stalled body');
+		$this->assertLessThan(1.5, \microtime(true) - $start);
+	}
 }

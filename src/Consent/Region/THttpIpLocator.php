@@ -45,9 +45,13 @@ use Prado\Util\Log\TLogger;
  * Endpoints, quotas and terms change; check the provider's current documentation, and configure
  * `Url` and the paths directly for a provider or an endpoint without a preset.
  *
- * Any answer other than HTTP 200 with a country (a timeout, a quota refusal, malformed JSON) is
- * logged at `TLogger::WARNING` under this class and gives null. The lookup sends the visitor's IP
- * address to the provider: list the provider as a recipient in the records of processing.
+ * The `ipstack` preset uses https, which ipstack's free plan does not offer: it needs a paid plan,
+ * or a `Url` with `http://`, which sends the address and the key unencrypted.
+ *
+ * Any answer other than HTTP 200 with a country (a timeout, a quota refusal, a redirect, a body
+ * above 64 KiB, malformed JSON) is logged at `TLogger::WARNING` under this class and gives null.
+ * The lookup sends the visitor's IP address to the provider: list the provider as a recipient in
+ * the records of processing.
  *
  * ```xml
  * <module id="geo-ip" class="belisoful\Privacy\Consent\Region\TIpRegionResolver" TrustedProxies="10.0.0.0/8">

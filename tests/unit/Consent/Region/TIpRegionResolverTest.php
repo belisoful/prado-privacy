@@ -3,6 +3,7 @@
 namespace belisoful\Privacy\Test\Unit\Consent\Region;
 
 use belisoful\Privacy\Consent\Region\IIpLocator;
+use belisoful\Privacy\Consent\Region\THttpIpLocator;
 use belisoful\Privacy\Consent\Region\TIpLocation;
 use belisoful\Privacy\Consent\Region\TIpRegionResolver;
 use belisoful\Privacy\Consent\Region\TMaxMindDbLocator;
@@ -10,8 +11,10 @@ use belisoful\Privacy\Test\Unit\PrivacyTestCase;
 use Prado\Caching\ICache;
 use Prado\Exceptions\TConfigurationException;
 use Prado\Exceptions\TInvalidDataValueException;
+use Prado\Prado;
 use Prado\TComponent;
 use Prado\TModule;
+use Prado\Util\Log\TLogger;
 use Prado\Xml\TXmlDocument;
 
 class TIpRegionResolverTest extends PrivacyTestCase
@@ -61,6 +64,122 @@ class TIpRegionResolverTest extends PrivacyTestCase
 		$this->assertSame('192.0.2.10', $resolver->getClientAddress($this->request), 'every hop trusted: the peer');
 		$this->request->ip = '';
 		$this->assertNull($resolver->getClientAddress($this->request));
+	}
+
+	public function testPortsBracketsAndQuotesAreRemovedFromHops()
+	{
+		$resolver = $this->resolver()->setTrustedProxies('10.0.0.0/8');
+		$this->request->ip = '10.0.0.1';
+		$this->request->headers['X-Forwarded-For'] = '"[2001:db8:ffff::1]:443", 203.0.113.50:5678, 10.0.0.2:80';
+		$this->assertSame('203.0.113.50', $resolver->getClientAddress($this->request));
+		$this->request->headers['X-Forwarded-For'] = '203.0.113.50, "[2001:db8::7]"';
+		$this->assertSame('2001:db8::7', $resolver->getClientAddress($this->request));
+		$this->request->headers['X-Forwarded-For'] = '[2001:db8::8';
+		$this->assertSame('2001:db8::8', $resolver->getClientAddress($this->request), 'an unclosed bracket');
+		$this->request->headers['X-Forwarded-For'] = '2001:db8::9';
+		$this->assertSame('2001:db8::9', $resolver->getClientAddress($this->request), 'a bare IPv6 address keeps its colons');
+	}
+
+	public function testForwardedIsReadWithoutXForwardedFor()
+	{
+		$resolver = $this->resolver()->setTrustedProxies('10.0.0.0/8');
+		$this->request->ip = '10.0.0.1';
+		$this->request->headers['Forwarded'] = 'for=198.51.100.9, For="[2001:db8:cafe::17]:4711";proto=https, for=10.0.0.2;by=10.0.0.1';
+		$this->assertSame('2001:db8:cafe::17', $resolver->getClientAddress($this->request), 'the rightmost untrusted for=');
+		$this->request->headers['Forwarded'] = 'for=198.51.100.9, proto=https';
+		$this->assertSame('unknown', $resolver->getClientAddress($this->request), 'an element without for= is no address');
+		$this->assertNull($resolver->resolveRegion($this->request));
+		$this->request->headers['Forwarded'] = 'for=198.51.100.1:8080, ';
+		$this->assertSame('US-CA', $resolver->resolveRegion($this->request), 'an empty element is skipped');
+		$this->request->headers['X-Forwarded-For'] = '203.0.113.50';
+		$this->assertSame('203.0.113.50', $resolver->getClientAddress($this->request), 'X-Forwarded-For comes first');
+		unset($this->request->headers['X-Forwarded-For'], $this->request->headers['Forwarded']);
+		$this->assertSame('10.0.0.1', $resolver->getClientAddress($this->request), 'no proxy header: the peer');
+		$this->request->ip = '203.0.113.1';
+		$this->request->headers['Forwarded'] = 'for=198.51.100.9';
+		$this->assertSame('203.0.113.1', $resolver->getClientAddress($this->request), 'an untrusted peer: Forwarded is ignored');
+	}
+
+	public function testIpv4MappedAddressesAreIpv4()
+	{
+		$this->assertSame('10.0.0.5', TIpRegionResolver::unmapAddress('::ffff:10.0.0.5'));
+		$this->assertSame('2001:db8::1', TIpRegionResolver::unmapAddress('2001:db8::1'));
+		$this->assertSame('10.0.0.5', TIpRegionResolver::unmapAddress('10.0.0.5'));
+		$this->assertSame('nope', TIpRegionResolver::unmapAddress('nope'));
+		$this->assertTrue(TIpRegionResolver::inRange('::ffff:10.0.0.5', '10.0.0.0/8'));
+		$resolver = $this->resolver()->setTrustedProxies('10.0.0.0/8');
+		$this->request->ip = '::ffff:10.0.0.1';
+		$this->request->headers['X-Forwarded-For'] = '203.0.113.50, ::ffff:10.0.0.2';
+		$this->assertSame('203.0.113.50', $resolver->getClientAddress($this->request), 'a mapped proxy peer and hop are trusted');
+		$this->assertSame('US-CA', $resolver->resolveRegion($this->request));
+		$untrusted = $this->resolver();
+		$this->request->ip = '::ffff:10.0.0.1';
+		$this->assertSame('10.0.0.1', $untrusted->getClientAddress($this->request));
+		$this->assertNull($untrusted->resolveRegion($this->request), 'a mapped private address is private');
+		$this->request->ip = '::FFFF:198.51.100.1';
+		$this->assertSame('US-CA', $untrusted->resolveRegion($this->request));
+		$this->assertSame(['203.0.113.50', '198.51.100.1'], $this->locator->asked, 'the locator gets IPv4');
+	}
+
+	public function testFailuresAreLoggedWithoutTheAddressAndUnknown()
+	{
+		Prado::getLogger()->deleteLogs();
+		$this->request->ip = '198.51.100.1';
+		$failing = new class () extends TComponent implements IIpLocator {
+			public function locate(string $ip): ?TIpLocation
+			{
+				throw new \RuntimeException('cannot place ' . $ip);
+			}
+		};
+		$this->assertNull((new TIpRegionResolver())->setLocator($failing)->resolveRegion($this->request), 'a throwing locator');
+		$this->assertNull((new TIpRegionResolver())->setLocator((new TMaxMindDbLocator())->setFile('/no/such/file.mmdb'))->resolveRegion($this->request), 'a missing database file');
+		$broken = new ArrayCache();
+		$broken->failGet = true;
+		$this->addModule('broken-cache', $broken);
+		$this->assertNull($this->resolver()->setCacheID('broken-cache')->resolveRegion($this->request), 'a failing cache read');
+		$this->assertSame([], $this->locator->asked);
+		$unwritable = new ArrayCache();
+		$unwritable->failSet = true;
+		$this->addModule('unwritable-cache', $unwritable);
+		$this->assertSame('US-CA', $this->resolver()->setCacheID('unwritable-cache')->resolveRegion($this->request), 'a failing cache write keeps the answer');
+		$logs = \array_values(Prado::getLogger()->getLogs(TLogger::WARNING, TIpRegionResolver::class));
+		$this->assertCount(4, $logs);
+		$this->assertStringContainsString('cannot place [address]', $logs[0][0]);
+		foreach ($logs as $log) {
+			$this->assertStringNotContainsString('198.51.100.1', $log[0]);
+		}
+	}
+
+	public function testCacheKeysSeparateResolvers()
+	{
+		$resolver = $this->resolver();
+		$this->assertSame($resolver->getCacheKeyPrefix(), $this->resolver()->getCacheKeyPrefix(), 'the same locator, the same keys');
+		$this->assertMatchesRegularExpression('/^' . \preg_quote(TIpRegionResolver::CACHE_PREFIX, '/') . '~[0-9a-f]{16}:$/', $resolver->getCacheKeyPrefix());
+		$ipinfo = (new TIpRegionResolver())->setLocator((new THttpIpLocator())->setService('ipinfo'));
+		$ipdata = (new TIpRegionResolver())->setLocator((new THttpIpLocator())->setService('ipdata'));
+		$this->assertNotSame($ipinfo->getCacheKeyPrefix(), $ipdata->getCacheKeyPrefix(), 'another provider, other keys');
+		$this->assertNotSame($resolver->getCacheKeyPrefix(), $ipinfo->getCacheKeyPrefix());
+		$file1 = (new TIpRegionResolver())->setLocator((new TMaxMindDbLocator())->setFile('/a.mmdb'));
+		$file2 = (new TIpRegionResolver())->setLocator((new TMaxMindDbLocator())->setFile('/b.mmdb'));
+		$this->assertNotSame($file1->getCacheKeyPrefix(), $file2->getCacheKeyPrefix(), 'another database, other keys');
+		$resolver->setID('geo-ip');
+		$this->assertSame(TIpRegionResolver::CACHE_PREFIX . 'geo-ip:', $resolver->getCacheKeyPrefix(), 'a module id names the keys');
+		$cache = new ArrayCache();
+		$this->addModule('shared-cache', $cache);
+		$this->request->ip = '198.51.100.1';
+		$resolver->setCacheID('shared-cache')->resolveRegion($this->request);
+		$this->assertCount(1, $cache->items);
+		$this->assertStringStartsWith(TIpRegionResolver::CACHE_PREFIX . 'geo-ip:', \array_key_first($cache->items));
+	}
+
+	public function testTheProcessingActivityNamesAnApiProvider()
+	{
+		$this->assertSame([], (new TIpRegionResolver())->getProcessingActivities()[0]->getRecipients());
+		$this->assertSame([], $this->resolver()->getProcessingActivities()[0]->getRecipients());
+		$api = (new TIpRegionResolver())->setLocator((new THttpIpLocator())->setUrl('https://geo.example.net/{ip}'));
+		$this->assertSame(['geo.example.net (IP geolocation provider)'], $api->getProcessingActivities()[0]->getRecipients());
+		$preset = (new TIpRegionResolver())->setLocator((new THttpIpLocator())->setService('ipdata'));
+		$this->assertSame(['ipdata (IP geolocation provider)'], $preset->getProcessingActivities()[0]->getRecipients());
 	}
 
 	public function testInRange()
@@ -185,13 +304,23 @@ class ArrayCache extends TModule implements ICache
 	/** @var array<string, array{0: mixed, 1: int}> */
 	public array $items = [];
 
+	public bool $failGet = false;
+
+	public bool $failSet = false;
+
 	public function get($id)
 	{
+		if ($this->failGet) {
+			throw new \RuntimeException('the cache is down');
+		}
 		return $this->items[$id][0] ?? false;
 	}
 
 	public function set($id, $value, $expire = 0, $dependency = null)
 	{
+		if ($this->failSet) {
+			throw new \RuntimeException('the cache is full');
+		}
 		$this->items[$id] = [$value, $expire];
 		return true;
 	}
