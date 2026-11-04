@@ -80,14 +80,16 @@ class TDbConsentLog extends TComponent implements IConsentLog
 	}
 
 	/**
-	 * Removes entries created before a time.
+	 * Removes every entry of the consent ids whose latest entry was created before a time. A consent
+	 * id's history is kept whole until the retention period has passed since its last change.
 	 * @param int $before a Unix time
 	 * @return int the number of entries removed
 	 */
 	public function purge(int $before): int
 	{
 		return (int) TConsentLogRecord::on($this->getTableConnection(TPrivacySchema::CONSENT_LOG))
-			->deleteAll('created_at < :before', [':before' => $before]);
+			->deleteAll('consent_id IN (SELECT consent_id FROM (SELECT consent_id FROM ' . TPrivacySchema::CONSENT_LOG
+				. ' GROUP BY consent_id HAVING MAX(created_at) < :before) privacy_expired)', [':before' => $before]);
 	}
 
 	/**

@@ -49,6 +49,7 @@
 	"TProcessingActivity": "belisoful\\Privacy\\Retention\\TProcessingActivity",
 	"TProcessingRegistry": "belisoful\\Privacy\\Retention\\TProcessingRegistry",
 	"TRegionGroups": "belisoful\\Privacy\\Consent\\Region\\TRegionGroups",
+	"TRetentionCronTask": "belisoful\\Privacy\\Retention\\TRetentionCronTask",
 	"TRetentionModule": "belisoful\\Privacy\\Retention\\TRetentionModule",
 	"TRetentionPolicy": "belisoful\\Privacy\\Retention\\TRetentionPolicy",
 	"TScopeAllRegionResolver": "belisoful\\Privacy\\Consent\\Region\\TScopeAllRegionResolver",
