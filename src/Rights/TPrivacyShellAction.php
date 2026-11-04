@@ -12,10 +12,12 @@ namespace belisoful\Privacy\Rights;
 
 use belisoful\Privacy\Retention\TProcessingRegistry;
 use belisoful\Privacy\Retention\TRetentionModule;
+use Prado\Exceptions\TInvalidDataValueException;
 use Prado\Prado;
 use Prado\Shell\TShellAction;
 use Prado\Shell\TShellApplication;
 use Prado\TModule;
+use Prado\TPropertyValue;
 
 /**
  * TPrivacyShellAction class.
@@ -28,12 +30,21 @@ use Prado\TModule;
  * | Command | Does |
  * |---|---|
  * | `prado-cli privacy/export <user>` | prints the subject's export as JSON |
- * | `prado-cli privacy/erase <user>` | erases the subject's data and prints the result per provider |
- * | `prado-cli privacy/requests [overdue]` | lists the pending requests, or the overdue ones |
+ * | `prado-cli privacy/erase <user>` | prints the export item count per provider; with `--yes`, erases the subject's data and prints the result per provider |
+ * | `prado-cli privacy/extend <id> <period> <reason>` | moves an open request's due date by an ISO 8601 duration and records the reason |
+ * | `prado-cli privacy/requests [overdue]` | lists the open requests (`pending`, `partial`, `failed`), or the overdue ones |
  * | `prado-cli privacy/purge` | runs the retention purge and prints the count per policy |
  * | `prado-cli privacy/ropa [json]` | prints the records of processing as Markdown, or JSON |
  *
- * `--by=<name>` records who ran the request (`operator` by default).
+ * `export` and `erase` take these options:
+ *
+ * | Option | Does |
+ * |---|---|
+ * | `--by=<name>` | records who ran the request (`operator` by default) |
+ * | `--email=<address>` | sets the subject's email address |
+ * | `--id=<kind>:<value>` | adds an identifier to the subject; repeatable (`--id=customer:C-1 --id=phone:555`) |
+ * | `--request=<id>` | answers an open request instead of opening a new one |
+ * | `--yes` | `erase` only: erases; without it, `erase` is a dry run |
  *
  * @author Brad Anderson <belisoful@icloud.com>
  * @since 0.1.0
@@ -41,14 +52,15 @@ use Prado\TModule;
 class TPrivacyShellAction extends TShellAction
 {
 	protected $action = 'privacy';
-	protected $methods = ['export', 'erase', 'requests', 'purge', 'ropa'];
-	protected $parameters = ['user', 'user', null, null, null];
-	protected $optional = [null, null, 'overdue', null, 'format'];
+	protected $methods = ['export', 'erase', 'extend', 'requests', 'purge', 'ropa'];
+	protected $parameters = ['user', 'user', ['id', 'period', 'reason'], null, null, null];
+	protected $optional = [null, null, null, 'overdue', null, 'format'];
 	protected $description = [
 		'Privacy: data subject requests, retention and records of processing.',
-		'Prints the export of a user\'s personal data as JSON.',
-		'Erases a user\'s personal data and prints the result per provider.',
-		'Lists the pending requests, or with "overdue" those past their due date.',
+		'Prints the export of a user\'s personal data as JSON. Options: --by, --email, --id=kind:value, --request.',
+		'Prints what would be erased; with --yes, erases a user\'s personal data and prints the result per provider. Options: --by, --email, --id=kind:value, --request.',
+		'Moves an open request\'s due date by an ISO 8601 duration (P2M, P45D) and records the reason.',
+		'Lists the open requests, or with "overdue" those past their due date.',
 		'Removes personal data past its retention period and prints the count per policy.',
 		'Prints the records of processing activities as Markdown, or with "json" as JSON.',
 	];
@@ -64,6 +76,18 @@ class TPrivacyShellAction extends TShellAction
 
 	/** @var string who runs the requests */
 	private string $_by = 'operator';
+
+	/** @var ?string the subject's email address */
+	private ?string $_email = null;
+
+	/** @var array<string, string> the subject's other identifiers, by kind */
+	private array $_identifiers = [];
+
+	/** @var ?int the open request to answer */
+	private ?int $_request = null;
+
+	/** @var bool whether `erase` erases */
+	private bool $_yes = false;
 
 	/**
 	 * Registers the action with a shell application, once; a `TPrivacyModule` becomes its module.
@@ -86,7 +110,11 @@ class TPrivacyShellAction extends TShellAction
 	 */
 	public function options($methodID): array
 	{
-		return \in_array($methodID, ['export', 'erase'], true) ? ['by'] : [];
+		return match ($methodID) {
+			'export' => ['by', 'email', 'id', 'request'],
+			'erase' => ['by', 'email', 'id', 'request', 'yes'],
+			default => [],
+		};
 	}
 
 	/**
@@ -168,6 +196,76 @@ class TPrivacyShellAction extends TShellAction
 	}
 
 	/**
+	 * @return ?string the subject's email address
+	 */
+	public function getEmail(): ?string
+	{
+		return $this->_email;
+	}
+
+	/**
+	 * @param mixed $value the subject's email address; empty for none
+	 */
+	public function setEmail($value): void
+	{
+		$this->_email = \trim((string) $value) ?: null;
+	}
+
+	/**
+	 * @return array<string, string> the subject's other identifiers, by kind
+	 */
+	public function getId(): array
+	{
+		return $this->_identifiers;
+	}
+
+	/**
+	 * Adds an identifier to the subject; `--id` repeats.
+	 * @param mixed $value an identifier, `kind:value`
+	 * @throws TInvalidDataValueException when the value is not `kind:value`
+	 */
+	public function setId($value): void
+	{
+		$parts = \explode(':', \trim((string) $value), 2);
+		if (\count($parts) < 2 || $parts[0] === '' || $parts[1] === '') {
+			throw new TInvalidDataValueException('privacy_subject_identifier_invalid', $value);
+		}
+		$this->_identifiers[$parts[0]] = $parts[1];
+	}
+
+	/**
+	 * @return ?int the open request to answer; null opens a new one
+	 */
+	public function getRequest(): ?int
+	{
+		return $this->_request;
+	}
+
+	/**
+	 * @param mixed $value the open request to answer; empty opens a new one
+	 */
+	public function setRequest($value): void
+	{
+		$this->_request = $value === '' || $value === null ? null : TPropertyValue::ensureInteger($value);
+	}
+
+	/**
+	 * @return bool whether `erase` erases; false makes it a dry run
+	 */
+	public function getYes(): bool
+	{
+		return $this->_yes;
+	}
+
+	/**
+	 * @param mixed $value whether `erase` erases; a bare `--yes` is true
+	 */
+	public function setYes($value): void
+	{
+		$this->_yes = $value === '' || TPropertyValue::ensureBoolean($value);
+	}
+
+	/**
 	 * Prints a user's export as JSON.
 	 * @param array $args the arguments: the action, then the user name
 	 * @return bool true
@@ -175,13 +273,14 @@ class TPrivacyShellAction extends TShellAction
 	public function actionExport($args)
 	{
 		if (($module = $this->requirePrivacyModule()) !== null) {
-			$this->getWriter()->writeLine($module->exportJson(new TDataSubject((string) $args[1]), $this->getBy()));
+			$this->getWriter()->writeLine($module->exportJson($this->subject($args), $this->getBy(), $this->getRequest()));
 		}
 		return true;
 	}
 
 	/**
-	 * Erases a user's data and prints the result per provider.
+	 * Erases a user's data and prints the result per provider. Without `--yes`, prints the export
+	 * item count per provider and erases nothing.
 	 * @param array $args the arguments: the action, then the user name
 	 * @return bool true
 	 */
@@ -191,7 +290,20 @@ class TPrivacyShellAction extends TShellAction
 			return true;
 		}
 		$writer = $this->getWriter();
-		foreach ($module->erase(new TDataSubject((string) $args[1]), $this->getBy()) as $name => $result) {
+		$subject = $this->subject($args);
+		if (!$this->getYes()) {
+			$writer->writeLine('Dry run: nothing is erased. Add --yes to erase.');
+			foreach ($module->getProviders() as $name => $provider) {
+				try {
+					$found = \count($provider->exportPersonalData($subject)) . ' items';
+				} catch (\Throwable $e) {
+					$found = 'export failed (' . $e::class . ')';
+				}
+				$writer->writeLine($name . ': ' . $found);
+			}
+			return true;
+		}
+		foreach ($module->erase($subject, $this->getBy(), $this->getRequest()) as $name => $result) {
 			$retained = \array_map(fn ($group) => $group['count'] . ' (' . $group['reason'] . ')', $result->getRetained());
 			$writer->writeLine($name . ': erased ' . $result->getErased()
 				. ($retained === [] ? '' : '; retained ' . \implode(', ', $retained))
@@ -201,7 +313,21 @@ class TPrivacyShellAction extends TShellAction
 	}
 
 	/**
-	 * Lists the pending requests, or the overdue ones.
+	 * Moves an open request's due date and prints the new one.
+	 * @param array $args the arguments: the action, the request id, the period, then the reason
+	 * @return bool true
+	 */
+	public function actionExtend($args)
+	{
+		if (($module = $this->requirePrivacyModule()) !== null) {
+			$due = $module->extendRequest((int) $args[1], (string) $args[2], \implode(' ', \array_slice($args, 3)));
+			$this->getWriter()->writeLine('#' . (int) $args[1] . ' is due ' . \gmdate('Y-m-d', $due) . '.');
+		}
+		return true;
+	}
+
+	/**
+	 * Lists the open requests, or the overdue ones.
 	 * @param array $args the arguments: the action, then optionally `overdue`
 	 * @return bool true
 	 */
@@ -211,13 +337,13 @@ class TPrivacyShellAction extends TShellAction
 			return true;
 		}
 		$overdue = ($args[1] ?? '') === 'overdue';
-		$entries = $overdue ? $module->getOverdueRequests() : $module->getRequestLog()->findPending();
+		$entries = $overdue ? $module->getOverdueRequests() : $module->getRequestLog()->findOpen();
 		$writer = $this->getWriter();
 		if ($entries === []) {
-			$writer->writeLine($overdue ? 'No overdue requests.' : 'No pending requests.');
+			$writer->writeLine($overdue ? 'No overdue requests.' : 'No open requests.');
 		}
 		foreach ($entries as $entry) {
-			$writer->writeLine('#' . $entry['id'] . ' ' . $entry['type'] . ' requested ' . \gmdate('Y-m-d', $entry['requested_at'])
+			$writer->writeLine('#' . $entry['id'] . ' ' . $entry['type'] . ' ' . $entry['status'] . ', requested ' . \gmdate('Y-m-d', $entry['requested_at'])
 				. ', due ' . \gmdate('Y-m-d', $entry['due_at']) . ', by ' . ($entry['requested_by'] ?? '-'));
 		}
 		return true;
@@ -255,6 +381,15 @@ class TPrivacyShellAction extends TShellAction
 		}
 		$this->getWriter()->writeLine(($args[1] ?? '') === 'json' ? $registry->toJson() : $registry->toMarkdown());
 		return true;
+	}
+
+	/**
+	 * @param array $args the arguments: the action, then the user name
+	 * @return TDataSubject the subject the user name, `--email` and `--id` describe
+	 */
+	protected function subject(array $args): TDataSubject
+	{
+		return new TDataSubject((string) $args[1], $this->getEmail(), $this->getId());
 	}
 
 	/**

@@ -15,7 +15,8 @@ namespace belisoful\Privacy\Data;
  *
  * TPrivacyRequestRecord is one row of `privacy_request`, a data subject request recorded by
  * `TDbPrivacyRequestLog`. The subject is a hash, so the record survives the subject's erasure.
- * `outcome` holds JSON: per provider, the counts erased and retained with reasons, and errors.
+ * `outcome` holds JSON: per provider, the counts erased and retained with reasons, and errors; the
+ * key `@extensions` holds the deadline extensions.
  *
  * @author Brad Anderson <belisoful@icloud.com>
  * @since 0.1.0
@@ -23,6 +24,9 @@ namespace belisoful\Privacy\Data;
 class TPrivacyRequestRecord extends TPrivacyActiveRecord
 {
 	public const TABLE = TPrivacySchema::REQUEST;
+
+	/** The length of `requested_by`, in characters. */
+	public const REQUESTED_BY_LENGTH = 255;
 
 	/** @var ?int the request id */
 	public $id;
@@ -33,7 +37,7 @@ class TPrivacyRequestRecord extends TPrivacyActiveRecord
 	/** @var string the hash of the subject's name */
 	public $subject_hash;
 
-	/** @var ?string who made the request: an operator's name, or `self` */
+	/** @var ?string who made the request: an operator's name, or `self`; at most 255 characters */
 	public $requested_by;
 
 	/** @var int when the request was made */
@@ -48,6 +52,6 @@ class TPrivacyRequestRecord extends TPrivacyActiveRecord
 	/** @var string `pending`, `completed`, `partial` or `failed` */
 	public $status;
 
-	/** @var ?string the outcome, JSON */
+	/** @var ?string the outcome and the deadline extensions, JSON */
 	public $outcome;
 }

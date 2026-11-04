@@ -23,6 +23,10 @@ use Prado\TComponent;
  * (a customer number, a phone number). {@see getHash()} is the subject's HMAC, the form in which
  * logs refer to a person.
  *
+ * The hash covers the user name only and is keyed by the application's ValidationKey. The request
+ * log links rows on it: after a rename, or a ValidationKey rotation, `TPrivacyModule::getRequests()`
+ * no longer finds the earlier requests.
+ *
  * The application verifies that the requester is the subject (or authorized by them) before it
  * builds a TDataSubject and hands it to `TPrivacyModule`.
  *
