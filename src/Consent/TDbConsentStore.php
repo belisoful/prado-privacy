@@ -66,7 +66,8 @@ class TDbConsentStore extends TCookieConsentStore implements IRetentionPurger
 		}
 		$compact = $record->toArray();
 		$row->consent_id = $record->getId();
-		$row->subject_hash = $this->getSubjectHash();
+		// A guest's save keeps the row's user, so the row still answers that user's access and erasure requests.
+		$row->subject_hash = $this->getSubjectHash() ?? $row->subject_hash;
 		$row->categories = \json_encode($compact['c'], JSON_THROW_ON_ERROR);
 		$row->version = $record->getVersion();
 		$row->source = $record->getSource();

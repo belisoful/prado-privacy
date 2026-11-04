@@ -91,7 +91,11 @@ class TDbConsentStoreTest extends PrivacyTestCase
 		$this->login('carol');
 		$this->assertNull((new TDbConsentStore())->setDbConnection(TestDb::connection())->setRestoreForUser(false)->load());
 		$this->app->setUser(new \belisoful\Privacy\Test\Unit\FakeUser());
-		$this->assertSame(\str_repeat('2', 32), (new TDbConsentStore())->setDbConnection(TestDb::connection())->load()->getId(), 'a guest gets the device\'s choice');
+		$guest = (new TDbConsentStore())->setDbConnection(TestDb::connection());
+		$this->assertSame(\str_repeat('2', 32), $guest->load()->getId(), 'a guest gets the device\'s choice');
+		$guest->save($this->record(\str_repeat('2', 32), 'denied', self::NOW + 20));
+		$bobHash = \belisoful\Privacy\TPrivacyHash::hash('bob', \belisoful\Privacy\TPrivacyHash::SUBJECT);
+		$this->assertSame('denied', $store->findBySubject($bobHash)[0]->getState('analytics'), 'a guest\'s save keeps the row\'s user');
 	}
 
 	public function testALoggedInUserAdoptsAGuestsChoice()
