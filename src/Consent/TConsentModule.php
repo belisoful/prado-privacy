@@ -58,8 +58,13 @@ use Prado\Xml\TXmlElement;
  * | `optout` (`OptOutFor`) | `granted` | the choice |
  * | `none` | `granted` | the choice |
  *
+ * A region known only by its country (`US`, when the resolver gives no state) takes the strictest
+ * mode a subdivision of it could have: with `OptOutFor="US-GPC"`, `US` is `optout`.
+ *
  * A choice counts only while its `Version` equals the module's and it has not expired
- * (`Expires` days, 180 by default). Required categories are always `granted`.
+ * (`Expires` days, 180 by default). Outside opt-in, the denials of an older or expired choice
+ * still apply while the store holds it, and `withdraw()` stores every category denied: an
+ * opt-out stands until the visitor changes it. Required categories are always `granted`.
  *
  * Global Privacy Control (`Sec-GPC: 1`), where honored ({@see getIsGpcHonored()}), denies the
  * `GpcCategories` (`marketing` by default): the signal overrides a grant from the banner or from
@@ -246,6 +251,8 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 		}
 		$record = $this->getRecord();
 		$optIn = $this->getMode() === TConsentMode::OptIn;
+		// Outside opt-in, a denial outlives its Version and expiry while the store holds it: an opt-out stands.
+		$lapsed = (!$optIn && $record === null) ? $this->getStoredRecord() : null;
 		$gpc = $this->getIsGpcHonored();
 		$explicit = $record !== null && \in_array($record->getSource(), [self::SOURCE_PREFERENCES, self::SOURCE_API], true);
 		$consent = [];
@@ -256,7 +263,11 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 			} elseif ($gpc && \in_array($name, $this->_gpcCategories, true) && !($explicit && $stored === TConsentState::Granted)) {
 				$state = TConsentState::Denied;
 			} else {
-				$state = $stored ?? ($optIn ? TConsentState::Undecided : TConsentState::Granted);
+				$state = $stored ?? match (true) {
+					$optIn => TConsentState::Undecided,
+					$lapsed?->getState($name) === TConsentState::Denied => TConsentState::Denied,
+					default => TConsentState::Granted,
+				};
 			}
 			$consent[$name] = $state;
 		}
@@ -306,8 +317,9 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 	/**
 	 * Records a choice, logs it, and raises `onConsentChanged` when the effective consent changed.
 	 *
-	 * Categories left out keep the stored choice, or are denied without one. Required categories
-	 * are always granted.
+	 * Categories left out keep the stored choice, or are denied without one. A stored grant that is
+	 * not in effect (Global Privacy Control denies it) is carried as denied, so the new record does
+	 * not turn it into an explicit grant. Required categories are always granted.
 	 * @param array<string, mixed> $categories category => `granted`, `denied`, or a boolean
 	 * @param string $source where the choice came from: `banner`, `preferences` or `api`
 	 * @throws TInvalidDataValueException when a category does not exist or a value is not a decision
@@ -317,10 +329,17 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 	{
 		$choice = $this->normalizeChoice($categories);
 		$stored = $this->getStoredRecord();
+		$effective = $this->getConsent();
 		$decision = [];
 		foreach ($this->_categories as $name => $category) {
-			$decision[$name] = $category->getRequired() ? TConsentState::Granted
-				: ($choice[$name] ?? ($this->getRecord()?->getState($name) ?? TConsentState::Denied));
+			if ($category->getRequired()) {
+				$decision[$name] = TConsentState::Granted;
+			} elseif (isset($choice[$name])) {
+				$decision[$name] = $choice[$name];
+			} else {
+				$kept = $this->getRecord()?->getState($name) ?? TConsentState::Denied;
+				$decision[$name] = ($kept === TConsentState::Granted && $effective[$name] !== TConsentState::Granted) ? TConsentState::Denied : $kept;
+			}
 		}
 		$now = $this->getClock()->time();
 		$record = new TConsentRecord(
@@ -331,11 +350,10 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 			$now + $this->getExpires() * 86400,
 			$source
 		);
-		$previous = $this->getConsent();
 		$this->getStore()->save($record);
 		$this->_storedRecord = $record;
 		$this->logChoice($record);
-		$this->raiseIfChanged($previous, $record, $source);
+		$this->raiseIfChanged($effective, $record, $source);
 		return $record;
 	}
 
@@ -365,21 +383,32 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 	}
 
 	/**
-	 * Withdraws the visitor's choice: clears the store and logs the withdrawal (every category denied)
-	 * when there was a choice. In an opt-in region the visitor is asked again.
+	 * Withdraws the visitor's choice and logs the withdrawal (every category denied).
+	 *
+	 * In an opt-in region the store is cleared, so the visitor is asked again; nothing is logged
+	 * when there was no choice. Elsewhere the absence of a choice means `granted`, so a withdrawal
+	 * stores the denials instead: the visitor's opt-out stands.
 	 */
 	public function withdraw(): void
 	{
 		$stored = $this->getStoredRecord();
 		$previous = $this->getConsent();
+		$now = $this->getClock()->time();
+		$denied = [];
+		foreach ($this->_categories as $name => $category) {
+			$denied[$name] = $category->getRequired() ? TConsentState::Granted : TConsentState::Denied;
+		}
+		if ($this->getMode() !== TConsentMode::OptIn) {
+			$record = new TConsentRecord($stored?->getId() ?? $this->generateConsentId(), $denied, $this->getVersion(), $now, $now + $this->getExpires() * 86400, self::SOURCE_WITHDRAW);
+			$this->getStore()->save($record);
+			$this->_storedRecord = $record;
+			$this->logChoice($record);
+			$this->raiseIfChanged($previous, $record, self::SOURCE_WITHDRAW);
+			return;
+		}
 		$this->getStore()->clear();
 		$this->_storedRecord = null;
 		if ($stored !== null) {
-			$now = $this->getClock()->time();
-			$denied = [];
-			foreach ($this->_categories as $name => $category) {
-				$denied[$name] = $category->getRequired() ? TConsentState::Granted : TConsentState::Denied;
-			}
 			$this->logChoice(new TConsentRecord($stored->getId(), $denied, $this->getVersion(), $now, $now, self::SOURCE_WITHDRAW));
 		}
 		$this->raiseIfChanged($previous, null, self::SOURCE_WITHDRAW);
@@ -558,10 +587,11 @@ class TConsentModule extends TModule implements IProcessingActivityProvider
 	public function getMode(): string
 	{
 		$region = $this->getRegion();
-		if ($region === null || TRegionGroups::matches($region, $this->_requireConsentFor)) {
+		// A country without its subdivision (`US`) takes the strictest mode one of its subdivisions could have.
+		if ($region === null || TRegionGroups::overlaps($region, $this->_requireConsentFor)) {
 			return TConsentMode::OptIn;
 		}
-		return TRegionGroups::matches($region, $this->_optOutFor) ? TConsentMode::OptOut : TConsentMode::None;
+		return TRegionGroups::overlaps($region, $this->_optOutFor) ? TConsentMode::OptOut : TConsentMode::None;
 	}
 
 	/**

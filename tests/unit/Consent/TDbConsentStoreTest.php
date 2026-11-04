@@ -87,6 +87,23 @@ class TDbConsentStoreTest extends PrivacyTestCase
 		$this->assertCount(2, $this->response->removed, 'clearing without a choice only expires the cookie');
 	}
 
+	public function testClearReachesTheUsersOtherDevices()
+	{
+		$this->login('alice');
+		$store = $this->store();
+		$store->save($this->record(\str_repeat('1', 32), 'granted', self::NOW - 50));
+		$store->save($this->record(\str_repeat('2', 32), 'granted', self::NOW));
+		$this->login('bob');
+		$store->save($this->record(\str_repeat('3', 32)));
+		$this->login('alice');
+		$device = (new TDbConsentStore())->setDbConnection(TestDb::connection());
+		$this->request->addCookie('prado_consent_id', $this->app->getSecurityManager()->hashData(\str_repeat('2', 32)));
+		$device->clear();
+		$this->assertSame(1, TestDb::count('privacy_consent_state'), 'bob\'s row remains');
+		$this->request->getCookies()->clear();
+		$this->assertNull((new TDbConsentStore())->setDbConnection(TestDb::connection())->load(), 'no other device\'s choice comes back');
+	}
+
 	public function testFindAndDeleteBySubject()
 	{
 		$this->login('alice');
@@ -99,7 +116,8 @@ class TDbConsentStoreTest extends PrivacyTestCase
 		$this->assertSame([\str_repeat('2', 32), \str_repeat('1', 32)], \array_map(fn ($r) => $r->getId(), $store->findBySubject($alice)));
 		TestDb::connection()->createCommand("UPDATE privacy_consent_state SET categories = 'not json' WHERE consent_id = '" . \str_repeat('1', 32) . "'")->execute();
 		$this->assertCount(1, $store->findBySubject($alice), 'a row that does not parse is skipped');
-		$this->assertSame(2, $store->deleteBySubject($alice));
+		$this->assertSame(1, $store->deleteBySubject($alice, \str_repeat('2', 32)), 'a kept id stays');
+		$this->assertSame(1, $store->deleteBySubject($alice));
 		$this->assertSame(1, TestDb::count('privacy_consent_state'));
 	}
 

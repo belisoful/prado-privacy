@@ -87,6 +87,13 @@ $consent->attachEventHandler('onConsentChanged', fn ($sender, $param) => /* $par
 Adding a category or changing the policy calls for a new `Version`: a choice made under another
 version counts as undecided, and the visitor is asked again.
 
+Outside opt-in regions an opt-out stands: the denials of a choice made under an older version, or
+expired while the store still holds it, still apply, and `withdraw()` stores every category denied
+instead of clearing the choice (which there would mean `granted`). A region known only by its
+country (`US` without a state) takes the strictest mode any of its subdivisions in
+`RequireConsentFor` or `OptOutFor` has. `EU` includes the outermost regions and Åland, which
+geolocation reports under their own codes (`GF`, `GP`, `MQ`, `YT`, `RE`, `MF`, `AX`).
+
 ### Module properties
 
 | Property | Default | Purpose |
@@ -174,7 +181,7 @@ list follows the state laws in force at release; check it against current law, a
 | `TConsentBanner` | while consent is required and undecided | Reject all, Accept all (the same element and class: equal prominence), Customize |
 | `TConsentPreferences` | when opened, or always with `AlwaysVisible` | a checkbox per category (required ones disabled), Reject all, Accept all, Save, Close |
 | `TConsentLink` | always; `Mode="optout"` only in opt-out regions | opens the preferences; `PreferencesUrl` is followed without JavaScript |
-| `TConsentGate` | its content while `Category` is granted, its `DeniedTemplate` otherwise | |
+| `TConsentGate` | its content while `Category` is granted, its `DeniedTemplate` otherwise; denied content is not pre-rendered, so it registers no script | |
 
 Every action works by ActiveControl callback (the banner, the preferences, the gates and the links
 re-render in place) and by postback without JavaScript. The packaged stylesheet
@@ -226,7 +233,7 @@ message goes to the application log, not to the request record.
 |---|---|---|
 | `TUserPersonalDataProvider` | the user's name, roles and `TUser` state from the user manager; `onExportUser` adds fields | raises `onEraseUser` for the application to delete the user (PRADO has no user-deletion API); without a handler, or for a `TUserManager` user defined in configuration, the user is reported as retained |
 | `TSessionPersonalDataProvider` | the current session, when the subject is the logged-in requester | destroys it; other visitors' sessions are unreachable and reported as such |
-| `TConsentPersonalDataProvider` | the current choice, `TDbConsentStore` rows, and the subject's consent log entries | withdraws the choice and deletes the rows; the log entries are retained as proof of consent (Art. 7(1), 17(3)(b)) until retention removes them |
+| `TConsentPersonalDataProvider` | the current choice, `TDbConsentStore` rows, and the subject's consent log entries | withdraws the choice and deletes the rows; the log entries are retained as proof of consent (Art. 7(1), 17(3)(b)) until retention removes them; outside opt-in the stored opt-out is retained so it is still honored |
 
 Every request goes to `privacy_request` (`TDbPrivacyRequestLog`, the runtime sqlite database
 unless `<requestlog ConnectionID="…"/>`): type, the subject's hash, who asked, when, the due date

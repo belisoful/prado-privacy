@@ -26,7 +26,8 @@ use Prado\TPropertyValue;
  * only the consent id, in the signed cookie `prado_consent_id` (the attributes of
  * `TCookieConsentStore` apply). The row also records the hash of the logged-in user's name, so
  * with `RestoreForUser` (the default) a user who logs in on another device gets the choice made
- * on the first one.
+ * on the first one. A withdrawal deletes all of the logged-in user's rows, so it reaches every
+ * device.
  *
  * The connection comes from `ConnectionID`, or the runtime sqlite database without one
  * (`TPrivacyDbConnectionTrait`). As an `IRetentionPurger`, the store removes the choices that
@@ -76,13 +77,17 @@ class TDbConsentStore extends TCookieConsentStore implements IRetentionPurger
 	}
 
 	/**
-	 * Deletes the choice's row and expires the consent id cookie.
+	 * Deletes the choice's row, and every row of the logged-in user so another device's choice is
+	 * not restored, and expires the consent id cookie.
 	 */
 	public function clear(): void
 	{
 		$record = $this->load();
 		if ($record !== null) {
 			TConsentStateRecord::on($this->getTableConnection(TPrivacySchema::CONSENT_STATE))->deleteByPk($record->getId());
+		}
+		if (($subject = $this->getSubjectHash()) !== null) {
+			$this->deleteBySubject($subject);
 		}
 		parent::clear();
 	}
@@ -116,12 +121,16 @@ class TDbConsentStore extends TCookieConsentStore implements IRetentionPurger
 	/**
 	 * Deletes the choices stored for a subject.
 	 * @param string $subjectHash the hash of a user name
+	 * @param ?string $exceptId a consent id to keep; null to delete every choice
 	 * @return int the number of choices deleted
 	 */
-	public function deleteBySubject(string $subjectHash): int
+	public function deleteBySubject(string $subjectHash, ?string $exceptId = null): int
 	{
-		return (int) TConsentStateRecord::on($this->getTableConnection(TPrivacySchema::CONSENT_STATE))
-			->deleteAll('subject_hash = :subject', [':subject' => $subjectHash]);
+		$finder = TConsentStateRecord::on($this->getTableConnection(TPrivacySchema::CONSENT_STATE));
+		if ($exceptId === null) {
+			return (int) $finder->deleteAll('subject_hash = :subject', [':subject' => $subjectHash]);
+		}
+		return (int) $finder->deleteAll('subject_hash = :subject AND consent_id <> :id', [':subject' => $subjectHash, ':id' => $exceptId]);
 	}
 
 	/**

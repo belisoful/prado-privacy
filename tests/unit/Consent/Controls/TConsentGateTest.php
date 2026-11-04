@@ -5,21 +5,34 @@ namespace belisoful\Privacy\Test\Unit\Consent\Controls;
 use belisoful\Privacy\Consent\Controls\TConsentGate;
 use Prado\Exceptions\TConfigurationException;
 use Prado\IO\TTextWriter;
+use Prado\Web\UI\TControl;
 use Prado\Web\UI\THtmlWriter;
 use Prado\Web\UI\TTemplate;
 use Prado\Web\UI\WebControls\TLiteral;
 
 class TConsentGateTest extends ConsentControlTestCase
 {
+	private TControl $tracker;
+
 	private function gate(bool $withTemplate = true): TConsentGate
 	{
 		$gate = new TConsentGate();
 		$gate->setID('Gate');
 		$gate->setCategory(' Functional ');
-		$gate->getControls()->add('<iframe id="embed"></iframe>');
+		$gate->addParsedObject('<iframe id="embed"></iframe>');
 		$literal = new TLiteral();
 		$literal->setText('<span id="more"></span>');
-		$gate->getControls()->add($literal);
+		$gate->addParsedObject($literal);
+		$this->tracker = new class () extends TControl {
+			public bool $preRendered = false;
+
+			public function onPreRender($param)
+			{
+				parent::onPreRender($param);
+				$this->preRendered = true;
+			}
+		};
+		$gate->addParsedObject($this->tracker);
 		if ($withTemplate) {
 			$gate->setDeniedTemplate(new TTemplate('<p id="denied">Needs consent</p>', __DIR__));
 		}
@@ -38,6 +51,7 @@ class TConsentGateTest extends ConsentControlTestCase
 		$this->assertStringContainsString('id="denied"', $html);
 		$this->assertStringNotContainsString('id="embed"', $html);
 		$this->assertStringNotContainsString('id="more"', $html);
+		$this->assertFalse($this->tracker->preRendered, 'denied content is not pre-rendered: it cannot register a script');
 		$this->assertSame([$gate], $this->module->getConsentControls());
 	}
 
@@ -52,6 +66,7 @@ class TConsentGateTest extends ConsentControlTestCase
 		$this->assertStringContainsString('id="embed"', $html);
 		$this->assertStringContainsString('id="more"', $html);
 		$this->assertStringNotContainsString('id="denied"', $html);
+		$this->assertTrue($this->tracker->preRendered);
 		$html = $page->renderForm();
 		$this->assertStringContainsString('id="embed"', $html, 'the denied container is restored for the next render');
 	}

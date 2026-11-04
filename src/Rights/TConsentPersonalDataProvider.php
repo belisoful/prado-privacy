@@ -26,6 +26,9 @@ use Prado\TPropertyValue;
  * | export | the current choice (for the logged-in subject), the choices a `TDbConsentStore` holds for the subject, and the subject's consent log entries |
  * | erase | the current choice is withdrawn (for the logged-in subject) and the subject's `TDbConsentStore` rows are deleted; the log entries are retained as proof of consent |
  *
+ * Outside an opt-in region a withdrawal stores the visitor's opt-out ({@see TConsentModule::withdraw()}),
+ * so erasure keeps that one record, reported as retained, rather than letting the opt-out lapse.
+ *
  * The consent log holds hashes only, and it is the controller's proof that consent was given (GDPR
  * Art. 7(1)); erasure does not reach it (Art. 17(3)(b) and (e)). The retention policy on the log
  * removes the entries.
@@ -37,6 +40,9 @@ class TConsentPersonalDataProvider extends TModule implements IPersonalDataProvi
 {
 	/** The reason consent log entries are retained. */
 	public const RETAINED_REASON = 'consent log: proof of consent (GDPR Art. 7(1), 17(3)(b)); hashed, removed by retention';
+
+	/** The reason a stored opt-out is retained. */
+	public const OPT_OUT_REASON = 'opt-out: kept so it continues to be honored (CCPA regulations §7026); expires with the choice';
 
 	/** @var string the id of the consent module */
 	private string $_consentModuleID = '';
@@ -64,7 +70,7 @@ class TConsentPersonalDataProvider extends TModule implements IPersonalDataProvi
 	}
 
 	/**
-	 * Withdraws the current choice for the logged-in subject and deletes the subject's stored choices; retains the log.
+	 * Withdraws the current choice for the logged-in subject and deletes the subject's stored choices; retains the log and a stored opt-out.
 	 * @param TDataSubject $subject the verified subject
 	 * @return TErasureResult the choices erased and the log entries retained
 	 */
@@ -72,13 +78,19 @@ class TConsentPersonalDataProvider extends TModule implements IPersonalDataProvi
 	{
 		$module = $this->getConsentModule();
 		$result = new TErasureResult();
+		$optOut = null;
 		if ($subject->getIsCurrentUser() && $module->getStoredRecord() !== null) {
 			$module->withdraw();
-			$result->addErased(1);
+			$optOut = $module->getStoredRecord();
+			if ($optOut === null) {
+				$result->addErased(1);
+			} else {
+				$result->addRetained(1, self::OPT_OUT_REASON);
+			}
 		}
 		$store = $module->getStore();
 		if ($store instanceof TDbConsentStore) {
-			$result->addErased($store->deleteBySubject($subject->getHash()));
+			$result->addErased($store->deleteBySubject($subject->getHash(), $optOut?->getId()));
 		}
 		if ($module->getLogEnabled() && ($count = \count($module->getLog()->findBySubject($subject->getHash()))) > 0) {
 			$result->addRetained($count, self::RETAINED_REASON);

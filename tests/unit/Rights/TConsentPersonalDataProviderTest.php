@@ -63,6 +63,28 @@ class TConsentPersonalDataProviderTest extends PrivacyTestCase
 		$this->assertFalse((new TConsentPersonalDataProvider())->rectifyPersonalData(new TDataSubject('alice'), []));
 	}
 
+	public function testEraseOutsideOptInKeepsTheOptOut()
+	{
+		$this->module->setRegionResolver(new class () extends \Prado\TComponent implements \belisoful\Privacy\Consent\Region\IRegionResolver {
+			public function resolveRegion(\Prado\Web\THttpRequest $request): ?string
+			{
+				return 'US-CA';
+			}
+		});
+		$this->login('alice');
+		$this->module->acceptAll();
+		$this->module->setStore((new TDbConsentStore())->setDbConnection(TestDb::connection())->setRestoreForUser(false));
+		$this->module->reset();
+		$this->request->getCookies()->clear();
+		$this->module->acceptAll();
+		$this->assertSame(2, TestDb::count('privacy_consent_state'), 'two devices');
+		$result = (new TConsentPersonalDataProvider())->erasePersonalData(new TDataSubject('alice'));
+		$this->assertSame(1, $result->getErased(), 'the other device\'s row');
+		$this->assertSame(['count' => 1, 'reason' => TConsentPersonalDataProvider::OPT_OUT_REASON], $result->getRetained()[0]);
+		$this->assertSame(1, TestDb::count('privacy_consent_state'));
+		$this->assertSame('denied', $this->module->getCategoryConsent('marketing'), 'the opt-out stands');
+	}
+
 	public function testEraseForAnotherSubjectAndWithoutALog()
 	{
 		$this->login('alice');

@@ -20,7 +20,7 @@ use Prado\Exceptions\TInvalidDataValueException;
  *
  * | Group | Regions |
  * |---|---|
- * | `EU` | the 27 member states of the European Union |
+ * | `EU` | the 27 member states of the European Union, and the parts of them that have their own ISO 3166 country code: the outermost regions French Guiana (`GF`), Guadeloupe (`GP`), Martinique (`MQ`), Mayotte (`YT`), Réunion (`RE`) and Saint-Martin (`MF`), and Åland (`AX`) |
  * | `EEA` | the EU, Iceland, Liechtenstein and Norway |
  * | `UK` | the United Kingdom (`GB`) |
  * | `CH` | Switzerland |
@@ -42,7 +42,7 @@ class TRegionGroups
 
 	/** @var array<string, string[]> group name => region codes */
 	private static array $_groups = [
-		'EU' => ['AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK'],
+		'EU' => ['AT', 'BE', 'BG', 'CY', 'CZ', 'DE', 'DK', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR', 'HU', 'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PL', 'PT', 'RO', 'SE', 'SI', 'SK', 'AX', 'GF', 'GP', 'MF', 'MQ', 'RE', 'YT'],
 		'EEA' => ['@EU', 'IS', 'LI', 'NO'],
 		'UK' => ['GB'],
 		'CH' => ['CH'],
@@ -107,6 +107,30 @@ class TRegionGroups
 		}
 		$region = \strtoupper($region);
 		return \in_array($region, $codes, true) || \in_array(\substr($region, 0, 2), $codes, true);
+	}
+
+	/**
+	 * Matches like {@see matches()}, and also matches a country without a subdivision (`US`) when
+	 * the codes hold one of its subdivisions (`US-CA`): the region might be that subdivision.
+	 * @param ?string $region the region (`DE`, `US`, `US-CA`); null for unknown
+	 * @param string[] $codes region codes, as {@see expand()} returns them
+	 * @return bool whether the region is, or might be, in the codes
+	 */
+	public static function overlaps(?string $region, array $codes): bool
+	{
+		if (self::matches($region, $codes)) {
+			return true;
+		}
+		if ($region === null || \strlen($region) !== 2) {
+			return false;
+		}
+		$prefix = \strtoupper($region) . '-';
+		foreach ($codes as $code) {
+			if (\str_starts_with($code, $prefix)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

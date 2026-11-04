@@ -8,6 +8,23 @@ All notable changes to `belisoful/prado-privacy` are recorded here. The format f
 
 The first release, 0.1.0.
 
+### Fixed
+
+- Outside opt-in regions an opt-out stands: a new `Version` or an expired choice still held by the
+  store no longer turns denied categories back to granted, and `withdraw()` stores every category
+  denied (and logs that) instead of clearing the choice. Erasure keeps that stored opt-out.
+- `EU` includes the outermost regions and Åland (`GF`, `GP`, `MQ`, `YT`, `RE`, `MF`, `AX`), which
+  geolocation reports under their own codes.
+- A region known only by its country (`US`) takes the strictest mode of its listed subdivisions,
+  so `HonorGpc="required"` applies to a US visitor whose state is unknown;
+  `TRegionGroups::overlaps()`.
+- `TConsentGate` no longer pre-renders denied content, so a control inside it cannot register a
+  script or bind data without consent.
+- A partial `setConsent()` no longer turns a grant that Global Privacy Control overrides into an
+  explicit grant.
+- `TDbConsentStore::clear()` deletes all of the logged-in user's rows, so a withdrawal is not
+  undone by another device's choice; `deleteBySubject()` takes an id to keep.
+
 ### Added
 
 - The package, stamped from the PRADO extension skeleton (`belisoful/prado-extension`), with

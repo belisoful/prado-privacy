@@ -34,6 +34,11 @@ use Prado\Web\UI\WebControls\TPlaceHolder;
  * </com:TConsentGate>
  * ```
  *
+ * The template content goes into a placeholder that is invisible while the category is not
+ * granted, so its controls are not pre-rendered: a control inside cannot register a script or
+ * bind data without consent. Controls added in code with `getControls()->add()` bypass the
+ * placeholder; add them with `addParsedObject()`.
+ *
  * The gate is a `<div>` with `data-consent-category` and `data-consent-state`. When a callback
  * changes the consent, the gate re-renders in place.
  *
@@ -49,6 +54,22 @@ class TConsentGate extends TActivePanel implements IConsentControl
 
 	/** @var ?TPlaceHolder the instantiated denied template */
 	private ?TPlaceHolder $_deniedContainer = null;
+
+	/** @var ?TPlaceHolder the content, visible only while the category is granted */
+	private ?TPlaceHolder $_contentContainer = null;
+
+	/**
+	 * Adds template content to the content placeholder.
+	 * @param mixed $object a control or a string from the template
+	 */
+	public function addParsedObject($object)
+	{
+		if ($this->_contentContainer === null) {
+			$this->_contentContainer = new TPlaceHolder();
+			$this->getControls()->add($this->_contentContainer);
+		}
+		$this->_contentContainer->getControls()->add($object);
+	}
 
 	/**
 	 * Instantiates the denied template and registers the gate with the consent module.
@@ -70,11 +91,13 @@ class TConsentGate extends TActivePanel implements IConsentControl
 	}
 
 	/**
-	 * Adds the category and its state as data attributes.
+	 * Hides the content unless the category is granted, so it is not pre-rendered, and adds the
+	 * category and its state as data attributes.
 	 * @param \Prado\TEventParameter $param the event parameter
 	 */
 	public function onPreRender($param)
 	{
+		$this->_contentContainer?->setVisible($this->getIsGranted());
 		parent::onPreRender($param);
 		$this->getAttributes()->add('data-consent-category', $this->getCategory());
 		$this->getAttributes()->add('data-consent-state', $this->getConsentModule()->getCategoryConsent($this->getCategory()));

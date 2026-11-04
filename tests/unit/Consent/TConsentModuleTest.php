@@ -71,7 +71,7 @@ class TConsentModuleTest extends PrivacyTestCase
 		$this->assertInstanceOf(TDbConsentLog::class, $module->getLog());
 		$this->assertFalse($module->getLogEnabled());
 		$this->assertFalse($module->getLogUserAgent());
-		$this->assertCount(30 + 1 + 1, $module->getRequireConsentFor());
+		$this->assertCount(37 + 1 + 1, $module->getRequireConsentFor());
 		$this->assertContains('US-CA', $module->getOptOutFor());
 		$this->assertSame(TGpcMode::Everywhere, $module->getHonorGpc());
 		$this->assertSame(['marketing'], $module->getGpcCategories());
@@ -127,7 +127,7 @@ class TConsentModuleTest extends PrivacyTestCase
 		$this->assertSame(395, $module->getExpires());
 		$this->assertTrue($module->getLogEnabled());
 		$this->assertTrue($module->getLogUserAgent());
-		$this->assertCount(27, $module->getRequireConsentFor());
+		$this->assertCount(34, $module->getRequireConsentFor());
 		$this->assertSame(['US-CA'], $module->getOptOutFor());
 		$this->assertSame(TGpcMode::Required, $module->getHonorGpc());
 		$this->assertSame(['marketing', 'personalization'], $module->getGpcCategories());
@@ -200,7 +200,7 @@ class TConsentModuleTest extends PrivacyTestCase
 	public function testRegionsSelectTheMode()
 	{
 		$module = $this->module();
-		foreach (['de' => TConsentMode::OptIn, 'GB' => TConsentMode::OptIn, 'US-CA' => TConsentMode::OptOut, 'US-NY' => TConsentMode::None, 'JP' => TConsentMode::None, 'Mars' => TConsentMode::OptIn] as $region => $mode) {
+		foreach (['de' => TConsentMode::OptIn, 'GB' => TConsentMode::OptIn, 'US-CA' => TConsentMode::OptOut, 'US-NY' => TConsentMode::None, 'US' => TConsentMode::OptOut, 'RE' => TConsentMode::OptIn, 'JP' => TConsentMode::None, 'Mars' => TConsentMode::OptIn] as $region => $mode) {
 			$this->region($module, $region);
 			$this->assertSame($mode, $module->getMode(), $region);
 		}
@@ -318,6 +318,25 @@ class TConsentModuleTest extends PrivacyTestCase
 		$this->assertSame('undecided', $module->getCategoryConsent('analytics'));
 	}
 
+	public function testOutsideOptInAnOptOutOutlivesItsVersionAndExpiry()
+	{
+		$module = $this->module();
+		$this->region($module, 'US-CA');
+		$module->setConsent(['analytics' => true, 'marketing' => false], TConsentModule::SOURCE_PREFERENCES);
+		$module->setVersion('2');
+		$this->assertNull($module->getRecord());
+		$this->assertSame('denied', $module->getCategoryConsent('marketing'), 'the denial stands under a new version');
+		$this->assertSame('granted', $module->getCategoryConsent('analytics'), 'a lapsed grant is the default anyway');
+		$this->clock->setTime(self::NOW + 180 * 86400);
+		$module->setVersion('1');
+		$module->reset();
+		$this->assertNull($module->getRecord());
+		$this->assertSame('denied', $module->getCategoryConsent('marketing'), 'and after expiry, while the store holds it');
+		$this->region($module, 'DE');
+		$module->reset();
+		$this->assertSame('undecided', $module->getCategoryConsent('marketing'), 'opt-in asks again');
+	}
+
 	public function testANewCategoryWithoutANewVersionIsUndecidedOnItsOwn()
 	{
 		$module = $this->module();
@@ -350,6 +369,53 @@ class TConsentModuleTest extends PrivacyTestCase
 		$module->withdraw();
 		$this->assertCount(2, $log->entries, 'nothing to withdraw logs nothing');
 		$this->assertCount(2, $this->events);
+	}
+
+	public function testWithdrawOutsideOptInStoresTheDenials()
+	{
+		$module = $this->module()->setLogEnabled(true);
+		$log = new RecordingConsentLog();
+		$module->setLog($log);
+		$this->region($module, 'US-CA');
+		$module->acceptAll();
+		$this->clock->setTime(self::NOW + 60);
+		$module->withdraw();
+		$this->assertTrue($module->getIsDecided());
+		$this->assertSame('denied', $module->getCategoryConsent('marketing'), 'the opt-out stands');
+		$this->assertSame('granted', $module->getCategoryConsent('necessary'));
+		$record = $module->getStoredRecord();
+		$this->assertSame(\sprintf('%032x', 1), $record->getId());
+		$this->assertSame('withdraw', $record->getSource());
+		$this->assertSame(self::NOW + 60 + 180 * 86400, $record->getExpires());
+		$module->reset();
+		$this->assertSame('denied', $module->getCategoryConsent('analytics'), 'the store holds it');
+		$this->assertCount(2, $log->entries);
+		$this->assertSame($record, $log->entries[1][0], 'the log holds what is in effect');
+		$this->assertCount(1, $this->events, 'accept all changed nothing in an opt-out region');
+		$this->assertSame($record, $this->events[0]->getRecord());
+
+		$fresh = $this->module();
+		$this->region($fresh, 'US-NY');
+		$this->session->data = [];
+		$fresh->withdraw();
+		$this->assertSame(\sprintf('%032x', 1), $fresh->getStoredRecord()->getId(), 'a withdrawal without a choice stores one');
+		$this->assertSame('denied', $fresh->getCategoryConsent('analytics'));
+	}
+
+	public function testAPartialChoiceDoesNotCarryAGrantGpcOverrides()
+	{
+		$module = $this->module();
+		$this->region($module, 'US-CA');
+		$module->acceptAll();
+		$this->request->headers['Sec-GPC'] = '1';
+		$module->reset();
+		$this->assertSame('denied', $module->getCategoryConsent('marketing'));
+		$record = $module->setConsent(['analytics' => true]);
+		$this->assertSame('denied', $record->getState('marketing'), 'the overridden grant is carried as denied');
+		$this->assertSame('denied', $module->getCategoryConsent('marketing'));
+		$this->assertSame('granted', $module->setConsent(['functional' => false])->getState('analytics'), 'a grant in effect is carried');
+		$module->setConsent(['marketing' => true]);
+		$this->assertSame('granted', $module->getCategoryConsent('marketing'), 'naming the category is an explicit grant');
 	}
 
 	public function testDyConsentAndDyResolveRegionFilter()

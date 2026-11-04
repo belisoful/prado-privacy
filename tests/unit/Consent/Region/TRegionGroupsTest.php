@@ -11,9 +11,14 @@ class TRegionGroupsTest extends TestCase
 	public function testGroups()
 	{
 		$this->assertSame(['EU', 'EEA', 'UK', 'CH', 'US-GPC'], \array_slice(TRegionGroups::getGroupNames(), 0, 5));
-		$this->assertCount(27, TRegionGroups::expand('EU'));
+		$eu = TRegionGroups::expand('EU');
+		$this->assertCount(27 + 7, $eu);
+		foreach (['RE', 'GP', 'MQ', 'GF', 'YT', 'MF', 'AX'] as $territory) {
+			$this->assertContains($territory, $eu, "{$territory} has its own country code and is in the EU");
+		}
+		$this->assertNotContains('BL', $eu, 'Saint-Barthélemy left the EU in 2012');
 		$eea = TRegionGroups::expand('eea');
-		$this->assertCount(30, $eea);
+		$this->assertCount(37, $eea);
 		$this->assertContains('NO', $eea);
 		$this->assertSame(['GB'], TRegionGroups::expand('UK'));
 		$this->assertContains('US-CA', TRegionGroups::expand('US-GPC'));
@@ -45,6 +50,17 @@ class TRegionGroupsTest extends TestCase
 		$this->assertFalse(TRegionGroups::matches('US-NY', $codes));
 		$this->assertTrue(TRegionGroups::matches('CA-QC', $codes), 'a subdivision matches its country');
 		$this->assertFalse(TRegionGroups::matches(null, $codes));
+	}
+
+	public function testOverlaps()
+	{
+		$codes = TRegionGroups::expand('EU, US-CA');
+		$this->assertTrue(TRegionGroups::overlaps('de', $codes), 'a match overlaps');
+		$this->assertTrue(TRegionGroups::overlaps('us', $codes), 'a country overlaps a subdivision in the codes');
+		$this->assertTrue(TRegionGroups::overlaps('US-CA', $codes));
+		$this->assertFalse(TRegionGroups::overlaps('US-NY', $codes), 'a known other subdivision does not');
+		$this->assertFalse(TRegionGroups::overlaps('CA', $codes), 'a country without a subdivision in the codes does not');
+		$this->assertFalse(TRegionGroups::overlaps(null, $codes));
 	}
 
 	public function testNormalize()
