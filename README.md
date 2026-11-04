@@ -357,7 +357,8 @@ only the expired rows of one keyed by an expiry time (`TDbConsentStore`). Purger
 | `TDbRetentionPurger` | rows of `Table` whose `TimeColumn` is before the cutoff, and that match `Condition` |
 | `TMethodRetentionPurger` | whatever `moduleId->method($before)` removes |
 | the consent log | every entry of a consent id whose latest entry is before the cutoff, so a history is kept whole until the period has passed since its last change |
-| the request log, `TDbConsentStore` | their own entries; the store removes expired choices |
+| the request log | completed requests answered before the cutoff; open (`pending`, `partial`, `failed`) requests are kept |
+| `TDbConsentStore` | choices that expired before the cutoff |
 
 `TDbRetentionPurger` properties:
 

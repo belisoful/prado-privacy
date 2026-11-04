@@ -52,7 +52,7 @@ use Prado\Xml\TXmlElement;
  * |---|---|---|
  * | `consent-log` | the consent log, when the first `TConsentModule` logs | `ConsentLogPeriod` (`P3Y`) |
  * | `consent-state` | expired rows of a `TDbConsentStore` | `P0D`: removed once expired |
- * | `privacy-requests` | the request log of the first `TPrivacyModule` | `RequestLogPeriod` (`P3Y`) |
+ * | `privacy-requests` | completed requests in the request log of the first `TPrivacyModule`; open ones are kept | `RequestLogPeriod` (`P3Y`), from completion |
  *
  * Three years matches the limitation period for claims in many EU member states; set the periods
  * the site's counsel advises.
