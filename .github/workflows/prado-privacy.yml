@@ -1,6 +1,8 @@
 name: PRADO Privacy Extension
 on:
+  # Other branches are tested through their pull requests, so a pull request runs once.
   push:
+    branches: [main]
   pull_request:
   schedule:
     # The package tracks PRADO's master branch, so a change there can break a build that no

@@ -197,7 +197,8 @@ English, present tense: clear, thorough, brief, timeless.
 
 - `.github/workflows/prado-privacy.yml` runs the unit matrix (PHP 8.2 to 8.5), coverage,
   Playwright in three browsers and the install test, each against a checkout of PRADO `master`.
-  The workflow token is read-only (`permissions: contents: read`).
+  The workflow token is read-only (`permissions: contents: read`). It runs on pushes to `main`
+  and on pull requests, so a branch is tested through its pull request, once.
 - Every action is pinned to a commit SHA with a `# vX.Y.Z` comment; Dependabot
   (`.github/dependabot.yml`) proposes updates weekly for actions, npm and Composer. CI installs
   npm packages with `npm ci` from the committed `package-lock.json`.
